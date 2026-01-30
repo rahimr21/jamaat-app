@@ -1,8 +1,8 @@
 // Aladhan Prayer Times API integration
 // https://aladhan.com/prayer-times-api
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { PrayerTimes, PrayerType } from '@/types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ALADHAN_BASE_URL = 'https://api.aladhan.com/v1';
 const CACHE_KEY_PREFIX = 'prayer_times_';
@@ -132,20 +132,20 @@ async function getCachedPrayerTimes(
   try {
     const cacheKey = getCacheKey(new Date());
     const cached = await AsyncStorage.getItem(cacheKey);
-    
+
     if (!cached) return null;
-    
+
     const parsed: CachedPrayerTimes = JSON.parse(cached);
-    
+
     if (!isCacheValid(parsed.cachedAt)) {
       await AsyncStorage.removeItem(cacheKey);
       return null;
     }
-    
+
     if (!isLocationClose(parsed.location, { latitude, longitude })) {
       return null;
     }
-    
+
     return parsed.data;
   } catch (error) {
     console.error('Error reading prayer times cache:', error);
@@ -169,14 +169,14 @@ async function cachePrayerTimes(
       location: { latitude, longitude },
     };
     await AsyncStorage.setItem(cacheKey, JSON.stringify(cacheData));
-    
+
     // Clean up old cache entries (older than 7 days)
     const keys = await AsyncStorage.getAllKeys();
-    const prayerKeys = keys.filter(k => k.startsWith(CACHE_KEY_PREFIX));
+    const prayerKeys = keys.filter((k) => k.startsWith(CACHE_KEY_PREFIX));
     const today = new Date();
     today.setDate(today.getDate() - 7);
     const cutoffStr = today.toISOString().split('T')[0];
-    
+
     for (const key of prayerKeys) {
       const dateStr = key.replace(CACHE_KEY_PREFIX, '');
       if (dateStr < cutoffStr) {
@@ -190,7 +190,7 @@ async function cachePrayerTimes(
 
 /**
  * Fetch prayer times from Aladhan API
- * 
+ *
  * @param latitude - User's latitude
  * @param longitude - User's longitude
  * @param method - Calculation method (default: 2 = ISNA)
@@ -211,11 +211,11 @@ export async function fetchPrayerTimes(
   try {
     const timestamp = Math.floor(Date.now() / 1000);
     const url = `${ALADHAN_BASE_URL}/timings/${timestamp}?latitude=${latitude}&longitude=${longitude}&method=${method}&school=${school}`;
-    
+
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
       },
     });
 
@@ -224,7 +224,7 @@ export async function fetchPrayerTimes(
     }
 
     const json: AladhanResponse = await response.json();
-    
+
     if (json.code !== 200 || json.status !== 'OK') {
       throw new Error('Invalid response from Aladhan API');
     }
@@ -247,12 +247,12 @@ export async function fetchPrayerTimes(
     return prayerTimes;
   } catch (error) {
     console.error('Error fetching prayer times:', error);
-    
+
     // Try to return yesterday's cached data as fallback
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const fallbackKey = getCacheKey(yesterday);
-    
+
     try {
       const fallback = await AsyncStorage.getItem(fallbackKey);
       if (fallback) {
@@ -262,7 +262,7 @@ export async function fetchPrayerTimes(
     } catch {
       // Ignore fallback errors
     }
-    
+
     throw error;
   }
 }
@@ -314,11 +314,9 @@ export function getNextPrayer(
       const diffMins = Math.floor(diffMs / (1000 * 60));
       const hours = Math.floor(diffMins / 60);
       const mins = diffMins % 60;
-      
-      const timeUntil = hours > 0 
-        ? `${hours}h ${mins}m` 
-        : `${mins}m`;
-      
+
+      const timeUntil = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+
       return { type: prayer.type, timeUntil };
     }
   }
@@ -330,10 +328,10 @@ export function getNextPrayer(
   const diffMins = Math.floor(diffMs / (1000 * 60));
   const hours = Math.floor(diffMins / 60);
   const mins = diffMins % 60;
-  
-  return { 
-    type: 'fajr', 
-    timeUntil: `${hours}h ${mins}m` 
+
+  return {
+    type: 'fajr',
+    timeUntil: `${hours}h ${mins}m`,
   };
 }
 
@@ -341,21 +339,18 @@ export function getNextPrayer(
  * Get prayer time suggestion for session creation
  * Returns the next prayer time as a Date object
  */
-export function suggestPrayerTime(
-  prayerTimes: PrayerTimes,
-  prayerType: PrayerType
-): Date {
+export function suggestPrayerTime(prayerTimes: PrayerTimes, prayerType: PrayerType): Date {
   const timeStr = prayerTimes[prayerType as keyof Omit<PrayerTimes, 'date'>];
   if (!timeStr || typeof timeStr !== 'string') {
     return new Date();
   }
-  
+
   const prayerTime = parseTimeToDate(timeStr);
-  
+
   // If the prayer time has passed today, suggest tomorrow
   if (prayerTime <= new Date()) {
     prayerTime.setDate(prayerTime.getDate() + 1);
   }
-  
+
   return prayerTime;
 }

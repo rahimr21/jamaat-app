@@ -8,11 +8,11 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 
+import { OfflineBanner, Toast } from '@/components/common';
 import { useColorScheme } from '@/components/useColorScheme';
-import { Toast, OfflineBanner } from '@/components/common';
+import { cleanupOfflineQueue, initOfflineQueue } from '@/lib/offlineQueue';
 import { useAuthStore } from '@/stores/authStore';
 import { useToastStore } from '@/stores/toastStore';
-import { initOfflineQueue, cleanupOfflineQueue } from '@/lib/offlineQueue';
 
 export { ErrorBoundary } from 'expo-router';
 

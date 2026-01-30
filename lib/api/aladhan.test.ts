@@ -1,5 +1,5 @@
-import { formatPrayerTime, getCurrentPrayer, getNextPrayer, suggestPrayerTime } from './aladhan';
 import type { PrayerTimes } from '@/types';
+import { formatPrayerTime, getCurrentPrayer, getNextPrayer, suggestPrayerTime } from './aladhan';
 
 describe('aladhan utilities', () => {
   const mockPrayerTimes: PrayerTimes = {

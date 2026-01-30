@@ -1,8 +1,8 @@
+import { config } from '@/constants';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
-import { config } from '@/constants';
-import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
+import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';

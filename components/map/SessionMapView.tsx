@@ -1,9 +1,9 @@
 // Map view for displaying prayer sessions
 import { formatTime } from '@/lib/utils/date';
-import type { SessionWithDetails, PrayerType } from '@/types';
+import type { PrayerType, SessionWithDetails } from '@/types';
 import React from 'react';
-import { View, Text, Pressable } from 'react-native';
-import { MapWrapper, MapMarker, useMapsAvailable } from './MapWrapper';
+import { Pressable, Text, View } from 'react-native';
+import { MapMarker, MapWrapper, useMapsAvailable } from './MapWrapper';
 
 // Prayer icons for markers
 const prayerIcons: Record<PrayerType, string> = {

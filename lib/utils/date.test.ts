@@ -1,14 +1,13 @@
 import {
-  formatTime,
   formatDate,
   formatDateTime,
-  formatRelativeTime,
-  isDatePast,
-  isDateFuture,
-  getMinutesBefore,
-  getMinutesAfter,
-  isBeforeDate,
+  formatTime,
   formatTimeUntil,
+  getMinutesAfter,
+  getMinutesBefore,
+  isBeforeDate,
+  isDateFuture,
+  isDatePast,
 } from './date';
 
 describe('date utilities', () => {

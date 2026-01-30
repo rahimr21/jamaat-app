@@ -1,13 +1,13 @@
-import { Card, CardContent, CardHeader } from '@/components/ui';
-import { PrayerTimesStrip } from '@/components/prayer';
 import { FeedSkeleton } from '@/components/common';
+import { PrayerTimesStrip } from '@/components/prayer';
 import { AttendeeListModal, LocationFilterModal, type LocationFilter } from '@/components/session';
+import { Card, CardContent, CardHeader } from '@/components/ui';
+import { config } from '@/constants';
 import { usePrayerTimes } from '@/lib/hooks/usePrayerTimes';
+import { formatTime, isDatePast } from '@/lib/utils/date';
+import { formatDistance } from '@/lib/utils/location';
 import { useAuthStore } from '@/stores/authStore';
 import { useSessionStore } from '@/stores/sessionStore';
-import { config } from '@/constants';
-import { formatDistance } from '@/lib/utils/location';
-import { formatTime, isDatePast } from '@/lib/utils/date';
 import type { PrayerType, SessionWithDetails } from '@/types';
 import * as Location from 'expo-location';
 import { useFocusEffect, useRouter } from 'expo-router';

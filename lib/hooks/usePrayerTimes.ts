@@ -1,7 +1,7 @@
 // Prayer times hook with caching and auto-refresh
-import { useCallback, useEffect, useState } from 'react';
 import { fetchPrayerTimes, getCurrentPrayer, getNextPrayer } from '@/lib/api/aladhan';
 import type { PrayerTimes, PrayerType } from '@/types';
+import { useCallback, useEffect, useState } from 'react';
 
 interface UsePrayerTimesResult {
   prayerTimes: PrayerTimes | null;
@@ -21,7 +21,9 @@ export function usePrayerTimes(
 ): UsePrayerTimesResult {
   const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
   const [currentPrayer, setCurrentPrayer] = useState<PrayerType | null>(null);
-  const [nextPrayer, setNextPrayer] = useState<{ type: PrayerType; timeUntil: string } | null>(null);
+  const [nextPrayer, setNextPrayer] = useState<{ type: PrayerType; timeUntil: string } | null>(
+    null
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,9 +70,9 @@ export function usePrayerTimes(
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(0, 0, 0, 0);
-    
+
     const msUntilMidnight = tomorrow.getTime() - now.getTime();
-    
+
     const timeout = setTimeout(() => {
       fetchTimes();
     }, msUntilMidnight + 1000); // Add 1s buffer

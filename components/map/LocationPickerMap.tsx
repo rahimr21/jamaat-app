@@ -1,7 +1,7 @@
 // Location picker map component for fine-tuning current location
-import React, { useState, useCallback } from 'react';
-import { View, Text, Pressable } from 'react-native';
-import { MapWrapper, MapMarker, useMapsAvailable } from './MapWrapper';
+import React, { useCallback, useState } from 'react';
+import { Pressable, Text, View } from 'react-native';
+import { MapMarker, MapWrapper, useMapsAvailable } from './MapWrapper';
 
 interface LocationPickerMapProps {
   initialLocation: { latitude: number; longitude: number };

@@ -1,27 +1,27 @@
-import { useState, useEffect, useCallback } from 'react';
+import { Button, Input } from '@/components/ui';
+import { fetchPrayerTimes, suggestPrayerTime } from '@/lib/api/aladhan';
+import { supabase } from '@/lib/supabase';
+import { formatDate, formatTime } from '@/lib/utils/date';
+import { createSessionSchema, getFirstZodError } from '@/lib/utils/validation';
+import { useAuthStore } from '@/stores/authStore';
+import { useSessionStore } from '@/stores/sessionStore';
+import type { PrayerSpace, PrayerTimes, PrayerType } from '@/types';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  Pressable,
-  ScrollView,
-  TextInput,
-  Platform,
   ActivityIndicator,
   Alert,
   Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import * as Location from 'expo-location';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { useAuthStore } from '@/stores/authStore';
-import { useSessionStore } from '@/stores/sessionStore';
-import { supabase } from '@/lib/supabase';
-import { Button, Input } from '@/components/ui';
-import { createSessionSchema, getFirstZodError } from '@/lib/utils/validation';
-import { fetchPrayerTimes, suggestPrayerTime } from '@/lib/api/aladhan';
-import { formatTime, formatDate } from '@/lib/utils/date';
-import type { PrayerType, PrayerSpace, PrayerTimes } from '@/types';
 
 const prayerTypes: { type: PrayerType; label: string; icon: string }[] = [
   { type: 'fajr', label: 'Fajr', icon: '🌅' },

@@ -1,12 +1,12 @@
 // Toast notification store
-import { create } from 'zustand';
 import type { ToastType } from '@/components/common/Toast';
+import { create } from 'zustand';
 
 interface ToastState {
   visible: boolean;
   message: string;
   type: ToastType;
-  
+
   // Actions
   showToast: (message: string, type?: ToastType) => void;
   hideToast: () => void;

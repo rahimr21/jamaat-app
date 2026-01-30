@@ -1,5 +1,6 @@
 // Date/time utility functions using date-fns
 import {
+  addMinutes,
   format,
   formatDistanceToNow,
   isAfter,
@@ -7,9 +8,8 @@ import {
   isPast,
   isToday,
   isTomorrow,
-  addMinutes,
-  subMinutes,
   parseISO,
+  subMinutes,
 } from 'date-fns';
 
 /**

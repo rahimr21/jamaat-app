@@ -1,7 +1,7 @@
 // Offline detection banner component
+import NetInfo from '@react-native-community/netinfo';
 import { useEffect, useState } from 'react';
 import { Animated, Text, View } from 'react-native';
-import NetInfo from '@react-native-community/netinfo';
 
 /**
  * Hook to detect network connectivity status

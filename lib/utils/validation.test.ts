@@ -1,12 +1,12 @@
 import {
   createSessionSchema,
-  prayerTypeSchema,
-  locationSchema,
-  updateProfileSchema,
   emailSchema,
-  phoneSchema,
-  getZodErrors,
   getFirstZodError,
+  getZodErrors,
+  locationSchema,
+  phoneSchema,
+  prayerTypeSchema,
+  updateProfileSchema,
 } from './validation';
 
 describe('validation utilities', () => {

@@ -1,10 +1,10 @@
 import {
-  formatDistance,
   calculateDistance,
+  DEFAULT_LOCATION,
+  formatDistance,
+  isWithinRadius,
   metersToMiles,
   milesToMeters,
-  isWithinRadius,
-  DEFAULT_LOCATION,
 } from './location';
 
 describe('location utilities', () => {
