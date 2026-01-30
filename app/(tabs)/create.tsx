@@ -1,5 +1,15 @@
-import { useState, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, TextInput, Platform, ActivityIndicator } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  TextInput,
+  Platform,
+  ActivityIndicator,
+  Alert,
+  Linking,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -9,7 +19,9 @@ import { useSessionStore } from '@/stores/sessionStore';
 import { supabase } from '@/lib/supabase';
 import { Button, Input } from '@/components/ui';
 import { createSessionSchema, getFirstZodError } from '@/lib/utils/validation';
-import type { PrayerType, PrayerSpace } from '@/types';
+import { fetchPrayerTimes, suggestPrayerTime } from '@/lib/api/aladhan';
+import { formatTime, formatDate } from '@/lib/utils/date';
+import type { PrayerType, PrayerSpace, PrayerTimes } from '@/types';
 
 const prayerTypes: { type: PrayerType; label: string; icon: string }[] = [
   { type: 'fajr', label: 'Fajr', icon: '🌅' },
@@ -31,7 +43,10 @@ export default function CreateScreen() {
   const [prayerType, setPrayerType] = useState<PrayerType>('dhuhr');
   const [locationType, setLocationType] = useState<LocationType>('campus');
   const [selectedSpace, setSelectedSpace] = useState<PrayerSpace | null>(null);
-  const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
   const [customLocationName, setCustomLocationName] = useState('');
   const [scheduledDate, setScheduledDate] = useState(new Date());
   const [notes, setNotes] = useState('');
@@ -44,6 +59,13 @@ export default function CreateScreen() {
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Prayer times for auto-suggest
+  const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
+  const [locationForPrayerTimes, setLocationForPrayerTimes] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
 
   // Fetch prayer spaces for user's university
   useEffect(() => {
@@ -72,8 +94,48 @@ export default function CreateScreen() {
     fetchSpaces();
   }, [profile?.university_id]);
 
+  // Fetch prayer times for auto-suggest
+  useEffect(() => {
+    const loadPrayerTimes = async () => {
+      // Use current location or default Boston coords
+      const lat = locationForPrayerTimes?.latitude ?? 42.3601;
+      const lng = locationForPrayerTimes?.longitude ?? -71.0589;
+
+      try {
+        const times = await fetchPrayerTimes(lat, lng);
+        setPrayerTimes(times);
+      } catch (error) {
+        console.error('Error fetching prayer times for auto-suggest:', error);
+      }
+    };
+
+    loadPrayerTimes();
+  }, [locationForPrayerTimes]);
+
+  // Auto-suggest prayer time when prayer type changes
+  useEffect(() => {
+    if (prayerTimes && prayerType !== 'jummah') {
+      const suggestedTime = suggestPrayerTime(prayerTimes, prayerType);
+      setScheduledDate(suggestedTime);
+    }
+  }, [prayerType, prayerTimes]);
+
+  // Show location permission dialog
+  const showLocationPermissionDialog = useCallback(() => {
+    Alert.alert(
+      'Location Required',
+      'Location access is required to find nearby prayers. Go to Settings?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Open Settings',
+          onPress: () => Linking.openSettings(),
+        },
+      ]
+    );
+  }, []);
+
   // Get current location when selecting "current location"
-  // Use cached position first (instant when feed already requested location), then low-accuracy fix for speed
   useEffect(() => {
     if (locationType === 'current') {
       const getLocation = async () => {
@@ -82,17 +144,27 @@ export default function CreateScreen() {
         try {
           const { status } = await Location.getForegroundPermissionsAsync();
           if (status !== 'granted') {
-            setError('Location permission required');
-            return;
+            // Request permission
+            const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+            if (newStatus !== 'granted') {
+              setError('Location permission required');
+              showLocationPermissionDialog();
+              setLocationType('campus'); // Revert to campus
+              setIsLoadingLocation(false);
+              return;
+            }
           }
 
           // Try last known position first (fast when app already has location from feed)
           const cached = await Location.getLastKnownPositionAsync({ maxAge: 120000 });
           if (cached) {
-            setCurrentLocation({
+            const coords = {
               latitude: cached.coords.latitude,
               longitude: cached.coords.longitude,
-            });
+            };
+            setCurrentLocation(coords);
+            setLocationForPrayerTimes(coords);
+            setIsLoadingLocation(false);
             return;
           }
 
@@ -100,11 +172,13 @@ export default function CreateScreen() {
           const location = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Low,
           });
-          setCurrentLocation({
+          const coords = {
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
-          });
-        } catch (err) {
+          };
+          setCurrentLocation(coords);
+          setLocationForPrayerTimes(coords);
+        } catch {
           setError('Could not get your location');
         } finally {
           setIsLoadingLocation(false);
@@ -113,7 +187,7 @@ export default function CreateScreen() {
 
       getLocation();
     }
-  }, [locationType]);
+  }, [locationType, showLocationPermissionDialog]);
 
   const handleSubmit = async () => {
     setError(null);
@@ -212,33 +286,37 @@ export default function CreateScreen() {
         {/* Location Type */}
         <View className="mb-6">
           <Text className="text-sm font-medium text-gray-700 mb-3">Location</Text>
-          
+
           <View className="flex-row mb-4">
             <Pressable
               className={`flex-1 py-3 rounded-l-lg border ${
-                locationType === 'campus' 
-                  ? 'bg-primary-500 border-primary-500' 
+                locationType === 'campus'
+                  ? 'bg-primary-500 border-primary-500'
                   : 'bg-white border-gray-300'
               }`}
               onPress={() => setLocationType('campus')}
             >
-              <Text className={`text-center font-medium ${
-                locationType === 'campus' ? 'text-white' : 'text-gray-700'
-              }`}>
+              <Text
+                className={`text-center font-medium ${
+                  locationType === 'campus' ? 'text-white' : 'text-gray-700'
+                }`}
+              >
                 Campus Space
               </Text>
             </Pressable>
             <Pressable
               className={`flex-1 py-3 rounded-r-lg border-t border-r border-b ${
-                locationType === 'current' 
-                  ? 'bg-primary-500 border-primary-500' 
+                locationType === 'current'
+                  ? 'bg-primary-500 border-primary-500'
                   : 'bg-white border-gray-300'
               }`}
               onPress={() => setLocationType('current')}
             >
-              <Text className={`text-center font-medium ${
-                locationType === 'current' ? 'text-white' : 'text-gray-700'
-              }`}>
+              <Text
+                className={`text-center font-medium ${
+                  locationType === 'current' ? 'text-white' : 'text-gray-700'
+                }`}
+              >
                 Current Location
               </Text>
             </Pressable>
@@ -304,29 +382,26 @@ export default function CreateScreen() {
 
         {/* Date & Time */}
         <View className="mb-6">
-          <Text className="text-sm font-medium text-gray-700 mb-3">Date & Time</Text>
+          <View className="flex-row items-center justify-between mb-3">
+            <Text className="text-sm font-medium text-gray-700">Date & Time</Text>
+            {prayerTimes && prayerType !== 'jummah' && (
+              <Text className="text-xs text-primary-500">Auto-suggested from prayer times</Text>
+            )}
+          </View>
           <View className="flex-row">
             <Pressable
               className="flex-1 mr-2 py-3 px-4 bg-gray-50 rounded-lg"
               onPress={() => setShowDatePicker(true)}
             >
               <Text className="text-gray-500 text-sm">Date</Text>
-              <Text className="text-gray-900 font-medium">
-                {scheduledDate.toLocaleDateString()}
-              </Text>
+              <Text className="text-gray-900 font-medium">{formatDate(scheduledDate)}</Text>
             </Pressable>
             <Pressable
               className="flex-1 py-3 px-4 bg-gray-50 rounded-lg"
               onPress={() => setShowTimePicker(true)}
             >
               <Text className="text-gray-500 text-sm">Time</Text>
-              <Text className="text-gray-900 font-medium">
-                {scheduledDate.toLocaleTimeString('en-US', { 
-                  hour: 'numeric', 
-                  minute: '2-digit',
-                  hour12: true 
-                })}
-              </Text>
+              <Text className="text-gray-900 font-medium">{formatTime(scheduledDate)}</Text>
             </Pressable>
           </View>
         </View>
@@ -363,24 +438,14 @@ export default function CreateScreen() {
             maxLength={500}
             textAlignVertical="top"
           />
-          <Text className="text-right text-sm text-gray-400 mt-1">
-            {notes.length}/500
-          </Text>
+          <Text className="text-right text-sm text-gray-400 mt-1">{notes.length}/500</Text>
         </View>
 
         {/* Error */}
-        {error && (
-          <Text className="text-red-500 text-sm mb-4">{error}</Text>
-        )}
+        {error && <Text className="text-red-500 text-sm mb-4">{error}</Text>}
 
         {/* Submit */}
-        <Button
-          variant="primary"
-          size="lg"
-          fullWidth
-          loading={isSubmitting}
-          onPress={handleSubmit}
-        >
+        <Button variant="primary" size="lg" fullWidth loading={isSubmitting} onPress={handleSubmit}>
           Create Session
         </Button>
       </ScrollView>

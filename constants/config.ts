@@ -9,9 +9,20 @@ export const config = {
   aladhanMethod: 2, // ISNA calculation method
   aladhanSchool: 0, // Shafi juristic school
 
+  // Google Maps
+  googleMapsApiKeyAndroid: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_ANDROID ?? '',
+  googleMapsApiKeyIOS: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY_IOS ?? '',
+
   // Location settings
   defaultRadiusMeters: 3218, // 2 miles
   maxRadiusMeters: 16093, // 10 miles
+
+  // Radius filter options (in meters)
+  radiusOptions: [
+    { label: '2 miles', value: 3218 },
+    { label: '5 miles', value: 8047 },
+    { label: '10 miles', value: 16093 },
+  ] as const,
 
   // Rate limits
   maxSessionsPerDay: 10,
@@ -31,6 +42,11 @@ export const config = {
   // App store
   appVersion: '1.0.0',
   buildNumber: 1,
+
+  // Support & Legal
+  supportEmail: process.env.EXPO_PUBLIC_SUPPORT_EMAIL ?? 'support@jamaat-app.com',
+  privacyPolicyUrl: process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL ?? '',
+  termsOfServiceUrl: process.env.EXPO_PUBLIC_TERMS_URL ?? '',
 } as const;
 
 export type Config = typeof config;

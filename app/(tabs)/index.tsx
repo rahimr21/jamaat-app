@@ -1,14 +1,26 @@
 import { Card, CardContent, CardHeader } from '@/components/ui';
 import { PrayerTimesStrip } from '@/components/prayer';
 import { FeedSkeleton } from '@/components/common';
+import { AttendeeListModal, LocationFilterModal, type LocationFilter } from '@/components/session';
 import { usePrayerTimes } from '@/lib/hooks/usePrayerTimes';
 import { useAuthStore } from '@/stores/authStore';
 import { useSessionStore } from '@/stores/sessionStore';
+import { config } from '@/constants';
+import { formatDistance } from '@/lib/utils/location';
+import { formatTime, isDatePast } from '@/lib/utils/date';
 import type { PrayerType, SessionWithDetails } from '@/types';
 import * as Location from 'expo-location';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Prayer icons mapping
@@ -21,54 +33,42 @@ const prayerIcons: Record<PrayerType, string> = {
   jummah: '🕌',
 };
 
-// Format distance for display
-function formatDistance(meters: number): string {
-  if (meters < 1000) {
-    return `${Math.round(meters)}m`;
-  }
-  const miles = meters / 1609.34;
-  return `${miles.toFixed(1)} mi`;
-}
-
-// Format time for display
-function formatTime(isoString: string): string {
-  const date = new Date(isoString);
-  return date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
-}
-
 // Session Card Component
-function SessionCard({ 
-  session, 
+function SessionCard({
+  session,
   isAttending,
   isCreator,
-  onJoin, 
-  onLeave 
-}: { 
+  onJoin,
+  onLeave,
+  onCancel,
+  onShowAttendees,
+}: {
   session: SessionWithDetails;
   isAttending: boolean;
   isCreator: boolean;
   onJoin: () => void;
   onLeave: () => void;
+  onCancel: () => void;
+  onShowAttendees: () => void;
 }) {
+  const isPast = isDatePast(session.scheduled_time);
+
   return (
-    <Card variant="outlined" className="mb-3">
+    <Card variant="outlined" className={`mb-3 ${isPast ? 'opacity-60' : ''}`}>
       <CardHeader>
         <View className="flex-row items-center">
-          <Text className="text-2xl mr-2">
-            {prayerIcons[session.prayer_type as PrayerType]}
-          </Text>
-          <View>
+          <Text className="text-2xl mr-2">{prayerIcons[session.prayer_type as PrayerType]}</Text>
+          <View className="flex-1">
             <Text className="text-lg font-semibold text-gray-900 capitalize">
               {session.prayer_type}
             </Text>
-            <Text className="text-sm text-gray-500">
-              {formatTime(session.scheduled_time)}
-            </Text>
+            <Text className="text-sm text-gray-500">{formatTime(session.scheduled_time)}</Text>
           </View>
+          {isPast && (
+            <View className="bg-gray-100 px-2 py-1 rounded">
+              <Text className="text-gray-500 text-xs">Passed</Text>
+            </View>
+          )}
         </View>
       </CardHeader>
 
@@ -78,9 +78,7 @@ function SessionCard({
           <Text className="text-gray-600 flex-1" numberOfLines={1}>
             {session.space_name}
           </Text>
-          <Text className="text-gray-400 text-sm">
-            {formatDistance(session.distance_meters)}
-          </Text>
+          <Text className="text-gray-400 text-sm">{formatDistance(session.distance_meters)}</Text>
         </View>
 
         {session.notes && (
@@ -90,8 +88,8 @@ function SessionCard({
         )}
 
         <View className="flex-row items-center justify-between mt-3 pt-3 border-t border-gray-100">
-          <View className="flex-row items-center">
-            <Text className="text-gray-600 text-sm">
+          <Pressable onPress={onShowAttendees} className="flex-row items-center">
+            <Text className="text-gray-600 text-sm underline">
               {session.attendee_count} attending
             </Text>
             {isCreator && (
@@ -99,9 +97,15 @@ function SessionCard({
                 <Text className="text-primary-700 text-xs">You created</Text>
               </View>
             )}
-          </View>
+          </Pressable>
 
-          {!isCreator && (
+          {isPast ? (
+            <Text className="text-gray-400 text-sm">Prayer time passed</Text>
+          ) : isCreator ? (
+            <Pressable className="px-4 py-2 rounded-lg bg-red-50" onPress={onCancel}>
+              <Text className="font-medium text-red-600">Cancel</Text>
+            </Pressable>
+          ) : (
             <Pressable
               className={`px-4 py-2 rounded-lg ${isAttending ? 'bg-gray-100' : 'bg-primary-500'}`}
               onPress={isAttending ? onLeave : onJoin}
@@ -143,62 +147,88 @@ function EmptyState() {
 export default function FeedScreen() {
   const router = useRouter();
   const { user, profile } = useAuthStore();
-  const { 
-    sessions, 
+  const {
+    sessions,
     attendingSessions,
-    isLoading, 
-    error: sessionError, 
-    clearError, 
-    fetchSessions, 
+    isLoading,
+    isLoadingMore,
+    error: sessionError,
+    hasMore,
+    clearError,
+    fetchSessions,
+    fetchMoreSessions,
     fetchAttendingSessions,
-    joinSession, 
+    joinSession,
     leaveSession,
+    cancelSession,
     subscribeToRealtime,
     unsubscribeFromRealtime,
   } = useSessionStore();
-  
+
   const [refreshing, setRefreshing] = useState(false);
-  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [deviceLocation, setDeviceLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
+
+  // Location filter state
+  const [locationFilter, setLocationFilter] = useState<LocationFilter>({
+    type: 'radius',
+    radiusMeters: config.defaultRadiusMeters,
+  });
+  const [showLocationFilter, setShowLocationFilter] = useState(false);
+
+  // Attendee list modal state
+  const [selectedSessionForAttendees, setSelectedSessionForAttendees] =
+    useState<SessionWithDetails | null>(null);
 
   // Prayer times
-  const { 
-    prayerTimes, 
-    currentPrayer, 
+  const effectiveLocation = locationFilter.campusLocation ?? deviceLocation;
+  const {
+    prayerTimes,
+    currentPrayer,
     isLoading: prayerTimesLoading,
-    error: prayerTimesError 
-  } = usePrayerTimes(location?.latitude ?? null, location?.longitude ?? null);
+    error: prayerTimesError,
+  } = usePrayerTimes(effectiveLocation?.latitude ?? null, effectiveLocation?.longitude ?? null);
 
-  // Fetch location on mount
+  // Fetch device location on mount
   useEffect(() => {
     const getLocation = async () => {
       try {
         const { status } = await Location.getForegroundPermissionsAsync();
         if (status !== 'granted') {
           // Use default location (Boston) if no permission
-          setLocation({ latitude: 42.3601, longitude: -71.0589 });
+          setDeviceLocation({ latitude: 42.3601, longitude: -71.0589 });
           return;
         }
 
         const currentLocation = await Location.getCurrentPositionAsync({});
-        setLocation({
+        setDeviceLocation({
           latitude: currentLocation.coords.latitude,
           longitude: currentLocation.coords.longitude,
         });
       } catch (error) {
         console.error('Error getting location:', error);
-        setLocation({ latitude: 42.3601, longitude: -71.0589 });
+        setDeviceLocation({ latitude: 42.3601, longitude: -71.0589 });
       }
     };
 
     getLocation();
   }, []);
 
-  // Fetch sessions when location is available (initial load)
+  // Compute the center location based on filter
+  const centerLocation = locationFilter.campusLocation ?? deviceLocation;
+
+  // Fetch sessions when location or filter changes
   useEffect(() => {
-    if (location) {
-      fetchSessions(location);
+    if (centerLocation) {
+      fetchSessions({
+        latitude: centerLocation.latitude,
+        longitude: centerLocation.longitude,
+        radiusMeters: locationFilter.radiusMeters,
+      });
     }
-  }, [location, fetchSessions]);
+  }, [centerLocation, locationFilter.radiusMeters, fetchSessions]);
 
   // Fetch attending sessions and subscribe to realtime
   useEffect(() => {
@@ -215,19 +245,29 @@ export default function FeedScreen() {
   // Refetch when feed tab gains focus (e.g. returning from Create)
   useFocusEffect(
     useCallback(() => {
-      if (location) fetchSessions(location);
-    }, [location, fetchSessions])
+      if (centerLocation) {
+        fetchSessions({
+          latitude: centerLocation.latitude,
+          longitude: centerLocation.longitude,
+          radiusMeters: locationFilter.radiusMeters,
+        });
+      }
+    }, [centerLocation, locationFilter.radiusMeters, fetchSessions])
   );
 
   const onRefresh = useCallback(async () => {
-    if (!location) return;
+    if (!centerLocation) return;
     setRefreshing(true);
-    await fetchSessions(location);
+    await fetchSessions({
+      latitude: centerLocation.latitude,
+      longitude: centerLocation.longitude,
+      radiusMeters: locationFilter.radiusMeters,
+    });
     if (user) {
       await fetchAttendingSessions(user.id);
     }
     setRefreshing(false);
-  }, [location, user, fetchSessions, fetchAttendingSessions]);
+  }, [centerLocation, locationFilter.radiusMeters, user, fetchSessions, fetchAttendingSessions]);
 
   const handleJoin = async (sessionId: string) => {
     if (!user) return;
@@ -237,6 +277,41 @@ export default function FeedScreen() {
   const handleLeave = async (sessionId: string) => {
     if (!user) return;
     await leaveSession(sessionId, user.id);
+  };
+
+  const handleCancel = (session: SessionWithDetails) => {
+    if (!user) return;
+
+    Alert.alert(
+      'Cancel Prayer Session',
+      'Are you sure you want to cancel this prayer? All attendees will be notified.',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, Cancel',
+          style: 'destructive',
+          onPress: () => cancelSession(session.session_id, user.id),
+        },
+      ]
+    );
+  };
+
+  const handleFilterChange = (filter: LocationFilter) => {
+    setLocationFilter(filter);
+  };
+
+  const getLocationLabel = () => {
+    if (locationFilter.type === 'campus' && locationFilter.universityName) {
+      return locationFilter.universityName;
+    }
+    const radiusOption = config.radiusOptions.find((r) => r.value === locationFilter.radiusMeters);
+    return `Near me (${radiusOption?.label ?? '2 miles'})`;
+  };
+
+  const handleLoadMore = () => {
+    if (hasMore && !isLoadingMore) {
+      fetchMoreSessions();
+    }
   };
 
   return (
@@ -258,6 +333,18 @@ export default function FeedScreen() {
           </Pressable>
         </View>
       </View>
+
+      {/* Location selector (PRD 7.5) */}
+      <Pressable
+        className="flex-row items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-100"
+        onPress={() => setShowLocationFilter(true)}
+      >
+        <View className="flex-row items-center">
+          <Text className="mr-2">📍</Text>
+          <Text className="text-gray-900 font-medium">{getLocationLabel()}</Text>
+        </View>
+        <Text className="text-primary-500">Change ▼</Text>
+      </Pressable>
 
       {/* RPC error banner */}
       {sessionError && (
@@ -284,13 +371,15 @@ export default function FeedScreen() {
               isCreator={item.created_by_id === user?.id}
               onJoin={() => handleJoin(item.session_id)}
               onLeave={() => handleLeave(item.session_id)}
+              onCancel={() => handleCancel(item)}
+              onShowAttendees={() => setSelectedSessionForAttendees(item)}
             />
           )}
           keyExtractor={(item) => item.session_id}
           contentContainerStyle={{ padding: 16 }}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
           ListHeaderComponent={
             <>
               {/* Prayer Times Strip */}
@@ -303,13 +392,31 @@ export default function FeedScreen() {
               )}
               {prayerTimesError && (
                 <View className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-                  <Text className="text-amber-700 text-sm">{prayerTimesError}</Text>
+                  <Text className="text-amber-700 text-sm">
+                    {prayerTimesError}.{' '}
+                    <Text
+                      className="underline"
+                      onPress={() => {
+                        // Open support email
+                        import('expo-linking').then((Linking) => {
+                          Linking.openURL(`mailto:${config.supportEmail}`);
+                        });
+                      }}
+                    >
+                      Contact support
+                    </Text>
+                  </Text>
                 </View>
               )}
-              <Text className="text-lg font-semibold text-gray-900 mb-4">
-                Upcoming Prayers
-              </Text>
+              <Text className="text-lg font-semibold text-gray-900 mb-4">Upcoming Prayers</Text>
             </>
+          }
+          ListFooterComponent={
+            isLoadingMore ? (
+              <View className="py-4 items-center">
+                <ActivityIndicator size="small" color="#28A745" />
+              </View>
+            ) : null
           }
         />
       )}
@@ -321,6 +428,26 @@ export default function FeedScreen() {
       >
         <Text className="text-white text-2xl font-light">+</Text>
       </Pressable>
+
+      {/* Location Filter Modal */}
+      <LocationFilterModal
+        visible={showLocationFilter}
+        currentFilter={locationFilter}
+        hasUniversity={!!profile?.university_id}
+        universityName={profile?.university_id ? 'My Campus' : undefined}
+        onSelectFilter={handleFilterChange}
+        onClose={() => setShowLocationFilter(false)}
+      />
+
+      {/* Attendee List Modal */}
+      {selectedSessionForAttendees && (
+        <AttendeeListModal
+          visible={!!selectedSessionForAttendees}
+          sessionId={selectedSessionForAttendees.session_id}
+          attendeeCount={selectedSessionForAttendees.attendee_count}
+          onClose={() => setSelectedSessionForAttendees(null)}
+        />
+      )}
     </SafeAreaView>
   );
 }

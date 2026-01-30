@@ -4,24 +4,33 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { create } from 'zustand';
 import { useToastStore } from './toastStore';
 
+interface FetchSessionsParams {
+  latitude: number;
+  longitude: number;
+  radiusMeters?: number;
+  append?: boolean; // For pagination - append to existing sessions
+}
+
 interface SessionState {
   sessions: SessionWithDetails[];
   attendingSessions: Set<string>;
   isLoading: boolean;
+  isLoadingMore: boolean;
   error: string | null;
   hasMore: boolean;
   realtimeChannel: RealtimeChannel | null;
+  lastFetchParams: FetchSessionsParams | null;
 
   // Actions
-  fetchSessions: (params: {
-    latitude: number;
-    longitude: number;
-    radiusMeters?: number;
-  }) => Promise<void>;
+  fetchSessions: (params: FetchSessionsParams) => Promise<void>;
+  fetchMoreSessions: () => Promise<void>;
   fetchAttendingSessions: (userId: string) => Promise<void>;
-  createSession: (input: CreateSessionInput) => Promise<{ error: Error | null; data: PrayerSession | null }>;
+  createSession: (
+    input: CreateSessionInput
+  ) => Promise<{ error: Error | null; data: PrayerSession | null }>;
   joinSession: (sessionId: string, userId: string) => Promise<{ error: Error | null }>;
   leaveSession: (sessionId: string, userId: string) => Promise<{ error: Error | null }>;
+  cancelSession: (sessionId: string, userId: string) => Promise<{ error: Error | null }>;
   subscribeToRealtime: () => void;
   unsubscribeFromRealtime: () => void;
   clearError: () => void;
@@ -37,16 +46,22 @@ interface CreateSessionInput {
   createdBy: string;
 }
 
+const PAGE_SIZE = 20;
+
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
   attendingSessions: new Set<string>(),
   isLoading: false,
+  isLoadingMore: false,
   error: null,
   hasMore: true,
   realtimeChannel: null,
+  lastFetchParams: null,
 
-  fetchSessions: async ({ latitude, longitude, radiusMeters = 15000 }) => {
-    set({ isLoading: true, error: null });
+  fetchSessions: async ({ latitude, longitude, radiusMeters = 3218, append = false }) => {
+    if (!append) {
+      set({ isLoading: true, error: null, sessions: [] });
+    }
 
     const fromTime = new Date().toISOString();
     try {
@@ -55,7 +70,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         user_lng: longitude,
         radius_meters: radiusMeters,
         from_time: fromTime,
-        limit_count: 50,
+        limit_count: PAGE_SIZE,
       });
 
       if (__DEV__) {
@@ -74,7 +89,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       set({
         sessions: data as SessionWithDetails[],
         isLoading: false,
-        hasMore: data.length === 50,
+        hasMore: data.length === PAGE_SIZE,
+        lastFetchParams: { latitude, longitude, radiusMeters },
       });
     } catch (error) {
       console.error('Error fetching sessions:', error);
@@ -85,6 +101,44 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         error: (error as Error).message,
         isLoading: false,
       });
+    }
+  },
+
+  fetchMoreSessions: async () => {
+    const { sessions, hasMore, isLoadingMore, lastFetchParams } = get();
+    if (!hasMore || isLoadingMore || !lastFetchParams) return;
+
+    set({ isLoadingMore: true });
+
+    // Use the last session's scheduled_time as cursor
+    const lastSession = sessions[sessions.length - 1];
+    const fromTime = lastSession?.scheduled_time ?? new Date().toISOString();
+
+    try {
+      const { data, error } = await supabase.rpc('get_sessions_within_radius', {
+        user_lat: lastFetchParams.latitude,
+        user_lng: lastFetchParams.longitude,
+        radius_meters: lastFetchParams.radiusMeters ?? 3218,
+        from_time: fromTime,
+        limit_count: PAGE_SIZE,
+      });
+
+      if (error) throw error;
+
+      // Filter out duplicates (in case of same scheduled_time)
+      const existingIds = new Set(sessions.map((s) => s.session_id));
+      const newSessions = (data as SessionWithDetails[]).filter(
+        (s) => !existingIds.has(s.session_id)
+      );
+
+      set({
+        sessions: [...sessions, ...newSessions],
+        isLoadingMore: false,
+        hasMore: data.length === PAGE_SIZE,
+      });
+    } catch (error) {
+      console.error('Error fetching more sessions:', error);
+      set({ isLoadingMore: false });
     }
   },
 
@@ -142,19 +196,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set((state) => ({
       attendingSessions: new Set(state.attendingSessions).add(sessionId),
       sessions: state.sessions.map((s) =>
-        s.session_id === sessionId
-          ? { ...s, attendee_count: s.attendee_count + 1 }
-          : s
+        s.session_id === sessionId ? { ...s, attendee_count: s.attendee_count + 1 } : s
       ),
     }));
 
     try {
-      const { error } = await supabase
-        .from('session_attendees')
-        .insert({
-          session_id: sessionId,
-          user_id: userId,
-        });
+      const { error } = await supabase.from('session_attendees').insert({
+        session_id: sessionId,
+        user_id: userId,
+      });
 
       if (error) {
         // Rollback optimistic update
@@ -211,9 +261,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         set((state) => ({
           attendingSessions: new Set(state.attendingSessions).add(sessionId),
           sessions: state.sessions.map((s) =>
-            s.session_id === sessionId
-              ? { ...s, attendee_count: s.attendee_count + 1 }
-              : s
+            s.session_id === sessionId ? { ...s, attendee_count: s.attendee_count + 1 } : s
           ),
         }));
         useToastStore.getState().error('Failed to leave prayer');
@@ -223,6 +271,30 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       useToastStore.getState().info('Left prayer');
       return { error: null };
     } catch (error) {
+      return { error: error as Error };
+    }
+  },
+
+  cancelSession: async (sessionId, userId) => {
+    try {
+      const { error } = await supabase
+        .from('prayer_sessions')
+        .update({ is_cancelled: true })
+        .eq('id', sessionId)
+        .eq('created_by', userId);
+
+      if (error) throw error;
+
+      // Remove the cancelled session from the list
+      set((state) => ({
+        sessions: state.sessions.filter((s) => s.session_id !== sessionId),
+      }));
+
+      useToastStore.getState().success('Prayer session cancelled');
+      return { error: null };
+    } catch (error) {
+      console.error('Error cancelling session:', error);
+      useToastStore.getState().error('Failed to cancel session');
       return { error: error as Error };
     }
   },
@@ -242,7 +314,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         },
         (payload) => {
           const { sessions } = get();
-          const sessionId = (payload.new as { session_id?: string })?.session_id ||
+          const sessionId =
+            (payload.new as { session_id?: string })?.session_id ||
             (payload.old as { session_id?: string })?.session_id;
 
           if (!sessionId) return;
@@ -251,9 +324,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           if (payload.eventType === 'INSERT') {
             set({
               sessions: sessions.map((s) =>
-                s.session_id === sessionId
-                  ? { ...s, attendee_count: s.attendee_count + 1 }
-                  : s
+                s.session_id === sessionId ? { ...s, attendee_count: s.attendee_count + 1 } : s
               ),
             });
           } else if (payload.eventType === 'DELETE') {

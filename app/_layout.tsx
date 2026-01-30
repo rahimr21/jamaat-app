@@ -12,10 +12,9 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { Toast, OfflineBanner } from '@/components/common';
 import { useAuthStore } from '@/stores/authStore';
 import { useToastStore } from '@/stores/toastStore';
+import { initOfflineQueue, cleanupOfflineQueue } from '@/lib/offlineQueue';
 
-export {
-    ErrorBoundary
-} from 'expo-router';
+export { ErrorBoundary } from 'expo-router';
 
 export const unstable_settings = {
   initialRouteName: '(auth)',
@@ -79,11 +78,16 @@ export default function RootLayout() {
   );
 }
 
-// Initialize auth state on mount. No navigation hooks.
+// Initialize auth state and offline queue on mount. No navigation hooks.
 function AuthInit() {
   const initialize = useAuthStore((s) => s.initialize);
   useEffect(() => {
     initialize();
+    initOfflineQueue();
+
+    return () => {
+      cleanupOfflineQueue();
+    };
   }, [initialize]);
   return null;
 }

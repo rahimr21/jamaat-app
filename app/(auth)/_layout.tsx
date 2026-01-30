@@ -11,12 +11,17 @@ export default function AuthLayout() {
     if (!isInitialized) return;
     if (!session) return;
     if (profile?.onboarding_complete) {
+      // Allow editing university from settings without redirecting back to tabs
+      const segment = segments[1];
+      if (segment === 'university') return;
       router.replace('/(tabs)');
       return;
     }
     if (profile && !profile.onboarding_complete) {
       const segment = segments[1];
-      const inOnboardingFlow = ['profile', 'student', 'university', 'permissions'].includes(segment as string);
+      const inOnboardingFlow = ['profile', 'student', 'university', 'permissions'].includes(
+        segment as string
+      );
       if (!inOnboardingFlow) {
         router.replace('/(auth)/student');
       }

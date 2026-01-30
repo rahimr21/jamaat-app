@@ -45,9 +45,8 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
   try {
     // Get Expo push token
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? 
-                      Constants.easConfig?.projectId;
-    
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+
     if (!projectId) {
       console.warn('Project ID not found for push notifications');
       // In development, try without projectId
@@ -86,7 +85,10 @@ export async function registerForPushNotifications(): Promise<string | null> {
 /**
  * Save push token to database
  */
-export async function savePushToken(userId: string, token: string): Promise<{ error: Error | null }> {
+export async function savePushToken(
+  userId: string,
+  token: string
+): Promise<{ error: Error | null }> {
   try {
     const { error } = await supabase
       .from('users')
@@ -154,10 +156,10 @@ export async function scheduleLocalNotification(
   data?: Record<string, unknown>,
   triggerSeconds?: number
 ): Promise<string> {
-  const trigger: Notifications.NotificationTriggerInput = triggerSeconds 
-    ? { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: triggerSeconds } 
+  const trigger: Notifications.NotificationTriggerInput = triggerSeconds
+    ? { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: triggerSeconds }
     : null;
-  
+
   return await Notifications.scheduleNotificationAsync({
     content: {
       title,
@@ -177,6 +179,13 @@ export async function cancelAllNotifications(): Promise<void> {
 }
 
 /**
+ * Cancel a specific scheduled notification by ID
+ */
+export async function cancelScheduledNotification(notificationId: string): Promise<void> {
+  await Notifications.cancelScheduledNotificationAsync(notificationId);
+}
+
+/**
  * Get badge count
  */
 export async function getBadgeCount(): Promise<number> {
@@ -188,4 +197,153 @@ export async function getBadgeCount(): Promise<number> {
  */
 export async function setBadgeCount(count: number): Promise<void> {
   await Notifications.setBadgeCountAsync(count);
+}
+
+// ============================================
+// PRAYER SESSION REMINDERS
+// ============================================
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const REMINDER_STORAGE_KEY = 'prayer_reminders';
+const REMINDER_MINUTES_BEFORE = 15;
+
+interface PrayerReminders {
+  [sessionId: string]: string; // sessionId -> notificationId
+}
+
+/**
+ * Get stored prayer reminders mapping
+ */
+async function getStoredReminders(): Promise<PrayerReminders> {
+  try {
+    const data = await AsyncStorage.getItem(REMINDER_STORAGE_KEY);
+    return data ? JSON.parse(data) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Save prayer reminders mapping
+ */
+async function saveStoredReminders(reminders: PrayerReminders): Promise<void> {
+  await AsyncStorage.setItem(REMINDER_STORAGE_KEY, JSON.stringify(reminders));
+}
+
+/**
+ * Schedule a 15-minute reminder for a prayer session
+ */
+export async function schedulePrayerReminder(
+  sessionId: string,
+  prayerType: string,
+  scheduledTime: string | Date,
+  spaceName: string
+): Promise<string | null> {
+  try {
+    const sessionDate = typeof scheduledTime === 'string' ? new Date(scheduledTime) : scheduledTime;
+
+    const reminderDate = new Date(sessionDate.getTime() - REMINDER_MINUTES_BEFORE * 60 * 1000);
+    const now = new Date();
+
+    // Don't schedule if reminder time is in the past
+    if (reminderDate <= now) {
+      return null;
+    }
+
+    const secondsUntilReminder = Math.floor((reminderDate.getTime() - now.getTime()) / 1000);
+
+    // Format time for notification
+    const timeStr = sessionDate.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `${prayerType.charAt(0).toUpperCase() + prayerType.slice(1)} in 15 minutes`,
+        body: `${spaceName} at ${timeStr}`,
+        data: { sessionId, type: 'prayer_reminder' },
+        sound: true,
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: secondsUntilReminder,
+      },
+    });
+
+    // Store the mapping
+    const reminders = await getStoredReminders();
+    reminders[sessionId] = notificationId;
+    await saveStoredReminders(reminders);
+
+    return notificationId;
+  } catch (error) {
+    console.error('Error scheduling prayer reminder:', error);
+    return null;
+  }
+}
+
+/**
+ * Cancel a scheduled prayer reminder
+ */
+export async function cancelPrayerReminder(sessionId: string): Promise<void> {
+  try {
+    const reminders = await getStoredReminders();
+    const notificationId = reminders[sessionId];
+
+    if (notificationId) {
+      await cancelScheduledNotification(notificationId);
+      delete reminders[sessionId];
+      await saveStoredReminders(reminders);
+    }
+  } catch (error) {
+    console.error('Error cancelling prayer reminder:', error);
+  }
+}
+
+/**
+ * Reschedule reminders for all joined sessions (call on app start)
+ */
+export async function rescheduleAllPrayerReminders(
+  joinedSessions: Array<{
+    sessionId: string;
+    prayerType: string;
+    scheduledTime: string;
+    spaceName: string;
+  }>
+): Promise<void> {
+  // Clear all existing reminders
+  const existingReminders = await getStoredReminders();
+  for (const notificationId of Object.values(existingReminders)) {
+    try {
+      await cancelScheduledNotification(notificationId);
+    } catch {
+      // Ignore errors for already-fired notifications
+    }
+  }
+
+  // Clear storage
+  await saveStoredReminders({});
+
+  // Schedule new reminders for future sessions
+  for (const session of joinedSessions) {
+    await schedulePrayerReminder(
+      session.sessionId,
+      session.prayerType,
+      session.scheduledTime,
+      session.spaceName
+    );
+  }
+}
+
+/**
+ * Check if reminders are enabled in user preferences
+ */
+export function shouldScheduleReminders(
+  notificationPreferences: { daily_reminders?: boolean } | null | undefined
+): boolean {
+  // Use daily_reminders preference for now, or could add a specific prayer_reminders pref
+  return notificationPreferences?.daily_reminders ?? false;
 }

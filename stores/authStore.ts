@@ -1,5 +1,4 @@
 import { Session, supabase, User } from '@/lib/supabase';
-import { removePushToken } from '@/lib/api/notifications';
 import type { User as AppUser } from '@/types';
 import { create } from 'zustand';
 
@@ -33,7 +32,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   initialize: async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       set({
         session,
         user: session?.user ?? null,
@@ -70,7 +71,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   setSessionFromUrl: async (url: string) => {
     if (!url.startsWith('jamaat://auth/callback')) return;
-    const queryOrHash = url.includes('#') ? url.split('#')[1] : url.includes('?') ? url.split('?')[1] : '';
+    const queryOrHash = url.includes('#')
+      ? url.split('#')[1]
+      : url.includes('?')
+        ? url.split('?')[1]
+        : '';
     const params = new URLSearchParams(queryOrHash);
     const access_token = params.get('access_token');
     const refresh_token = params.get('refresh_token');
@@ -152,12 +157,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   signOut: async () => {
     const { user } = get();
-    
-    // Remove push token before signing out
+
+    // Remove push token before signing out (lazy-load to avoid Expo Go crash on startup)
     if (user?.id) {
-      await removePushToken(user.id);
+      try {
+        const { removePushToken } = await import('@/lib/api/notifications');
+        await removePushToken(user.id);
+      } catch {
+        // Ignore in Expo Go where push is not supported
+      }
     }
-    
+
     await supabase.auth.signOut();
     set({ session: null, user: null, profile: null });
   },
@@ -167,11 +177,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+      const { data, error } = await supabase.from('users').select('*').eq('id', user.id).single();
 
       if (error) {
         // Profile might not exist yet (new user)

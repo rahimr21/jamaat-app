@@ -1,6 +1,9 @@
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
+import { config } from '@/constants';
 import { useRouter } from 'expo-router';
+import Constants from 'expo-constants';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
 import { Alert, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -40,19 +43,20 @@ function SettingsSection({ title, children }: { title?: string; children: React.
   return (
     <View className="mb-6">
       {title && (
-        <Text className="text-sm font-medium text-gray-500 uppercase px-4 mb-2">
-          {title}
-        </Text>
+        <Text className="text-sm font-medium text-gray-500 uppercase px-4 mb-2">{title}</Text>
       )}
-      <View className="bg-white rounded-xl border border-gray-100">
-        {children}
-      </View>
+      <View className="bg-white rounded-xl border border-gray-100">{children}</View>
     </View>
   );
 }
 
 function Divider() {
   return <View className="h-px bg-gray-100 mx-4" />;
+}
+
+// Get app version from Expo config or fallback to constants
+function getAppVersion(): string {
+  return Constants.expoConfig?.version ?? config.appVersion;
 }
 
 export default function SettingsScreen() {
@@ -73,9 +77,15 @@ export default function SettingsScreen() {
   }, [showEditNameModal, profile?.display_name]);
 
   // Notification preferences
-  const [newPrayers, setNewPrayers] = useState(profile?.notification_preferences?.new_prayers ?? true);
-  const [prayerJoined, setPrayerJoined] = useState(profile?.notification_preferences?.prayer_joined ?? true);
-  const [dailyReminders, setDailyReminders] = useState(profile?.notification_preferences?.daily_reminders ?? false);
+  const [newPrayers, setNewPrayers] = useState(
+    profile?.notification_preferences?.new_prayers ?? true
+  );
+  const [prayerJoined, setPrayerJoined] = useState(
+    profile?.notification_preferences?.prayer_joined ?? true
+  );
+  const [dailyReminders, setDailyReminders] = useState(
+    profile?.notification_preferences?.daily_reminders ?? false
+  );
 
   const updateNotificationPref = async (key: string, value: boolean) => {
     if (!profile) return;
@@ -121,22 +131,40 @@ export default function SettingsScreen() {
     }
   };
 
+  const handlePrivacyPolicy = async () => {
+    if (config.privacyPolicyUrl) {
+      await WebBrowser.openBrowserAsync(config.privacyPolicyUrl);
+    } else {
+      Alert.alert(
+        'Privacy Policy',
+        'Coming soon! Our privacy policy will be available before the app launches.'
+      );
+    }
+  };
+
+  const handleTermsOfService = async () => {
+    if (config.termsOfServiceUrl) {
+      await WebBrowser.openBrowserAsync(config.termsOfServiceUrl);
+    } else {
+      Alert.alert(
+        'Terms of Service',
+        'Coming soon! Our terms of service will be available before the app launches.'
+      );
+    }
+  };
+
   const handleLogout = () => {
-    Alert.alert(
-      'Log Out',
-      'Are you sure you want to log out?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Log Out', 
-          style: 'destructive',
-          onPress: async () => {
-            await signOut();
-            router.replace('/(auth)/welcome');
-          }
+    Alert.alert('Log Out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Log Out',
+        style: 'destructive',
+        onPress: async () => {
+          await signOut();
+          router.replace('/(auth)/welcome');
         },
-      ]
-    );
+      },
+    ]);
   };
 
   return (
@@ -153,15 +181,9 @@ export default function SettingsScreen() {
             onPress={() => setShowEditNameModal(true)}
           />
           <Divider />
-          <SettingsRow
-            label="Email"
-            value={profile?.email || 'Not set'}
-          />
+          <SettingsRow label="Email" value={profile?.email || 'Not set'} />
           <Divider />
-          <SettingsRow
-            label="Phone"
-            value={profile?.phone || 'Not set'}
-          />
+          <SettingsRow label="Phone" value={profile?.phone || 'Not set'} />
         </SettingsSection>
 
         {/* Student Section */}
@@ -222,34 +244,16 @@ export default function SettingsScreen() {
 
         {/* About Section */}
         <SettingsSection title="About">
-          <SettingsRow
-            label="Version"
-            value="1.0.0"
-          />
+          <SettingsRow label="Version" value={getAppVersion()} />
           <Divider />
-          <SettingsRow
-            label="Privacy Policy"
-            onPress={() => {
-              // TODO: Open privacy policy
-              Alert.alert('Privacy Policy', 'Coming soon!');
-            }}
-          />
+          <SettingsRow label="Privacy Policy" onPress={handlePrivacyPolicy} />
           <Divider />
-          <SettingsRow
-            label="Terms of Service"
-            onPress={() => {
-              // TODO: Open terms of service
-              Alert.alert('Terms of Service', 'Coming soon!');
-            }}
-          />
+          <SettingsRow label="Terms of Service" onPress={handleTermsOfService} />
         </SettingsSection>
 
         {/* Account Section */}
         <SettingsSection>
-          <Pressable
-            className="py-4 px-4 active:bg-gray-50"
-            onPress={handleLogout}
-          >
+          <Pressable className="py-4 px-4 active:bg-gray-50" onPress={handleLogout}>
             <Text className="text-center text-red-500 font-medium">Log Out</Text>
           </Pressable>
         </SettingsSection>
@@ -271,10 +275,7 @@ export default function SettingsScreen() {
           className="flex-1 bg-black/50 justify-center px-6"
           onPress={() => setShowEditNameModal(false)}
         >
-          <Pressable
-            className="bg-white rounded-xl p-6"
-            onPress={(e) => e.stopPropagation()}
-          >
+          <Pressable className="bg-white rounded-xl p-6" onPress={(e) => e.stopPropagation()}>
             <Text className="text-lg font-semibold text-gray-900 mb-2">Edit display name</Text>
             <TextInput
               className="border border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 mb-2"
@@ -286,9 +287,7 @@ export default function SettingsScreen() {
               autoComplete="name"
               maxLength={50}
             />
-            {editNameError && (
-              <Text className="text-red-500 text-sm mb-2">{editNameError}</Text>
-            )}
+            {editNameError && <Text className="text-red-500 text-sm mb-2">{editNameError}</Text>}
             <View className="flex-row gap-3 mt-2">
               <Pressable
                 className="flex-1 py-3 rounded-lg bg-gray-100 items-center"
@@ -301,7 +300,9 @@ export default function SettingsScreen() {
                 onPress={handleSaveDisplayName}
                 disabled={editNameSaving || editNameValue.trim().length < 2}
               >
-                <Text className="text-white font-medium">{editNameSaving ? 'Saving...' : 'Save'}</Text>
+                <Text className="text-white font-medium">
+                  {editNameSaving ? 'Saving...' : 'Save'}
+                </Text>
               </Pressable>
             </View>
           </Pressable>

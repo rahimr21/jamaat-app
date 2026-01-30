@@ -1,10 +1,56 @@
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
+import { config } from '@/constants';
 import type { University } from '@/types';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const UNIVERSITIES_CACHE_KEY = 'universities_list';
+
+interface CachedUniversities {
+  data: University[];
+  cachedAt: number;
+}
+
+// Check if cache is still valid (within TTL)
+function isCacheValid(cachedAt: number): boolean {
+  const now = Date.now();
+  return now - cachedAt < config.universitiesCacheTTL;
+}
+
+// Get cached universities
+async function getCachedUniversities(): Promise<University[] | null> {
+  try {
+    const cached = await AsyncStorage.getItem(UNIVERSITIES_CACHE_KEY);
+    if (!cached) return null;
+
+    const parsed: CachedUniversities = JSON.parse(cached);
+    if (!isCacheValid(parsed.cachedAt)) {
+      await AsyncStorage.removeItem(UNIVERSITIES_CACHE_KEY);
+      return null;
+    }
+
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+// Save universities to cache
+async function cacheUniversities(data: University[]): Promise<void> {
+  try {
+    const cacheData: CachedUniversities = {
+      data,
+      cachedAt: Date.now(),
+    };
+    await AsyncStorage.setItem(UNIVERSITIES_CACHE_KEY, JSON.stringify(cacheData));
+  } catch (error) {
+    console.error('Error caching universities:', error);
+  }
+}
 
 export default function UniversityScreen() {
   const router = useRouter();
@@ -20,9 +66,33 @@ export default function UniversityScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
 
-  // Fetch universities on mount
+  // Fetch universities on mount with caching
   useEffect(() => {
     const fetchUniversities = async () => {
+      // Try cache first
+      const cached = await getCachedUniversities();
+      if (cached && cached.length > 0) {
+        setUniversities(cached);
+        setFilteredUniversities(cached);
+
+        // Pre-select current university when editing from settings
+        if (profile?.university_id && fromSettings) {
+          const current = cached.find((u) => u.id === profile.university_id);
+          if (current) setSelectedUniversity(current);
+        }
+
+        setIsLoading(false);
+
+        // Refresh in background (stale-while-revalidate pattern)
+        refreshUniversitiesInBackground();
+        return;
+      }
+
+      // No cache, fetch from server
+      await fetchFromServer();
+    };
+
+    const fetchFromServer = async () => {
       const { data, error } = await supabase
         .from('universities')
         .select('*')
@@ -33,6 +103,10 @@ export default function UniversityScreen() {
         const list = data as University[];
         setUniversities(list);
         setFilteredUniversities(list);
+
+        // Cache the results
+        await cacheUniversities(list);
+
         // Pre-select current university when editing from settings
         if (profile?.university_id && fromSettings) {
           const current = list.find((u) => u.id === profile.university_id);
@@ -40,6 +114,21 @@ export default function UniversityScreen() {
         }
       }
       setIsLoading(false);
+    };
+
+    const refreshUniversitiesInBackground = async () => {
+      const { data, error } = await supabase
+        .from('universities')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+
+      if (!error && data) {
+        const list = data as University[];
+        setUniversities(list);
+        setFilteredUniversities(list);
+        await cacheUniversities(list);
+      }
     };
 
     fetchUniversities();
@@ -125,7 +214,9 @@ export default function UniversityScreen() {
         <View className="flex-1">
           <Text className="text-base font-medium text-gray-900">{item.name}</Text>
           {item.city && item.state && (
-            <Text className="text-sm text-gray-500">{item.city}, {item.state}</Text>
+            <Text className="text-sm text-gray-500">
+              {item.city}, {item.state}
+            </Text>
           )}
         </View>
         {selectedUniversity?.id === item.id && (
@@ -149,9 +240,7 @@ export default function UniversityScreen() {
         </View>
 
         {/* Title */}
-        <Text className="text-2xl font-bold text-gray-900 mb-2">
-          Select your university
-        </Text>
+        <Text className="text-2xl font-bold text-gray-900 mb-2">Select your university</Text>
         <Text className="text-gray-600 mb-6">
           Find prayer spaces and connect with students at your campus
         </Text>

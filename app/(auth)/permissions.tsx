@@ -1,5 +1,4 @@
 import { supabase } from '@/lib/supabase';
-import { registerForPushNotifications, savePushToken } from '@/lib/api/notifications';
 import { useAuthStore } from '@/stores/authStore';
 import Constants from 'expo-constants';
 import * as Location from 'expo-location';
@@ -14,7 +13,7 @@ const isExpoGo = Constants.appOwnership === 'expo';
 export default function PermissionsScreen() {
   const router = useRouter();
   const { user, fetchProfile } = useAuthStore();
-  
+
   const [locationGranted, setLocationGranted] = useState(false);
   const [notificationsGranted, setNotificationsGranted] = useState(false);
   const [notificationsUnavailable, setNotificationsUnavailable] = useState(false);
@@ -31,7 +30,7 @@ export default function PermissionsScreen() {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       setLocationGranted(status === 'granted');
-      
+
       if (status !== 'granted') {
         Alert.alert(
           'Location Required',
@@ -59,22 +58,21 @@ export default function PermissionsScreen() {
     }
 
     try {
+      const { registerForPushNotifications, savePushToken } =
+        await import('@/lib/api/notifications');
       const token = await registerForPushNotifications();
-      
+
       if (token) {
         setNotificationsGranted(true);
-        
-        // Save token to database
+
         if (user?.id) {
           await savePushToken(user.id, token);
         }
       } else {
         // Permission was denied
-        Alert.alert(
-          'Notifications Disabled',
-          'You can enable notifications later in Settings.',
-          [{ text: 'OK' }]
-        );
+        Alert.alert('Notifications Disabled', 'You can enable notifications later in Settings.', [
+          { text: 'OK' },
+        ]);
       }
     } catch (error) {
       console.error('Error requesting notifications:', error);
@@ -90,10 +88,7 @@ export default function PermissionsScreen() {
   const handleComplete = async () => {
     setIsLoading(true);
     try {
-      await supabase
-        .from('users')
-        .update({ onboarding_complete: true })
-        .eq('id', user?.id);
+      await supabase.from('users').update({ onboarding_complete: true }).eq('id', user?.id);
       await fetchProfile();
       router.replace('/(tabs)');
     } catch (err) {
@@ -116,12 +111,8 @@ export default function PermissionsScreen() {
         </View>
 
         {/* Title */}
-        <Text className="text-2xl font-bold text-gray-900 mb-2">
-          Enable permissions
-        </Text>
-        <Text className="text-gray-600 mb-8">
-          These permissions help Jamaat work best for you
-        </Text>
+        <Text className="text-2xl font-bold text-gray-900 mb-2">Enable permissions</Text>
+        <Text className="text-gray-600 mb-8">These permissions help Jamaat work best for you</Text>
 
         {/* Location permission */}
         <View className="mb-6 p-4 bg-gray-50 rounded-xl">
@@ -130,9 +121,7 @@ export default function PermissionsScreen() {
               <Text className="text-2xl">📍</Text>
             </View>
             <View className="flex-1">
-              <Text className="text-lg font-semibold text-gray-900 mb-1">
-                Location
-              </Text>
+              <Text className="text-lg font-semibold text-gray-900 mb-1">Location</Text>
               <Text className="text-gray-600 text-sm mb-3">
                 Find prayers near you and set prayer locations
               </Text>
@@ -141,7 +130,11 @@ export default function PermissionsScreen() {
                 onPress={requestLocation}
                 disabled={locationGranted}
               >
-                <Text className={locationGranted ? 'text-green-700 font-medium' : 'text-white font-medium'}>
+                <Text
+                  className={
+                    locationGranted ? 'text-green-700 font-medium' : 'text-white font-medium'
+                  }
+                >
                   {locationGranted ? '✓ Enabled' : 'Enable Location'}
                 </Text>
               </Pressable>
@@ -156,9 +149,7 @@ export default function PermissionsScreen() {
               <Text className="text-2xl">🔔</Text>
             </View>
             <View className="flex-1">
-              <Text className="text-lg font-semibold text-gray-900 mb-1">
-                Notifications
-              </Text>
+              <Text className="text-lg font-semibold text-gray-900 mb-1">Notifications</Text>
               <Text className="text-gray-600 text-sm mb-3">
                 {notificationsUnavailable && isExpoGo
                   ? 'Push notifications are not available in Expo Go'
@@ -176,7 +167,11 @@ export default function PermissionsScreen() {
                   onPress={requestNotifications}
                   disabled={notificationsGranted}
                 >
-                  <Text className={notificationsGranted ? 'text-green-700 font-medium' : 'text-white font-medium'}>
+                  <Text
+                    className={
+                      notificationsGranted ? 'text-green-700 font-medium' : 'text-white font-medium'
+                    }
+                  >
                     {notificationsGranted ? '✓ Enabled' : 'Enable Notifications'}
                   </Text>
                 </Pressable>
@@ -189,7 +184,8 @@ export default function PermissionsScreen() {
         {isExpoGo && (
           <View className="mb-4 p-3 bg-yellow-50 rounded-lg">
             <Text className="text-yellow-800 text-sm text-center">
-              You're using Expo Go. Some features like push notifications will be available in the production app.
+              You're using Expo Go. Some features like push notifications will be available in the
+              production app.
             </Text>
           </View>
         )}
