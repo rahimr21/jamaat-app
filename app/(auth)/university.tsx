@@ -1,0 +1,171 @@
+import { useState, useEffect } from 'react';
+import { View, Text, TextInput, Pressable, FlatList } from 'react-native';
+import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/stores/authStore';
+import type { University } from '@/types';
+
+export default function UniversityScreen() {
+  const router = useRouter();
+  const { user, fetchProfile } = useAuthStore();
+  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [universities, setUniversities] = useState<University[]>([]);
+  const [filteredUniversities, setFilteredUniversities] = useState<University[]>([]);
+  const [selectedUniversity, setSelectedUniversity] = useState<University | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Fetch universities on mount
+  useEffect(() => {
+    const fetchUniversities = async () => {
+      const { data, error } = await supabase
+        .from('universities')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+
+      if (!error && data) {
+        setUniversities(data as University[]);
+        setFilteredUniversities(data as University[]);
+      }
+      setIsLoading(false);
+    };
+
+    fetchUniversities();
+  }, []);
+
+  // Filter universities based on search
+  useEffect(() => {
+    if (searchQuery) {
+      const filtered = universities.filter((u) =>
+        u.name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredUniversities(filtered);
+    } else {
+      setFilteredUniversities(universities);
+    }
+  }, [searchQuery, universities]);
+
+  const handleContinue = async () => {
+    if (!selectedUniversity) return;
+
+    setIsSaving(true);
+
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({
+          is_student: true,
+          university_id: selectedUniversity.id,
+        })
+        .eq('id', user?.id);
+
+      if (error) throw error;
+
+      await fetchProfile();
+      router.push('/(auth)/permissions');
+    } catch (err) {
+      console.error('Error saving university:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSkip = () => {
+    router.push('/(auth)/permissions');
+  };
+
+  const renderUniversity = ({ item }: { item: University }) => (
+    <Pressable
+      className={`py-4 px-4 border-b border-gray-100 ${selectedUniversity?.id === item.id ? 'bg-primary-50' : ''}`}
+      onPress={() => setSelectedUniversity(item)}
+    >
+      <View className="flex-row items-center justify-between">
+        <View className="flex-1">
+          <Text className="text-base font-medium text-gray-900">{item.name}</Text>
+          {item.city && item.state && (
+            <Text className="text-sm text-gray-500">{item.city}, {item.state}</Text>
+          )}
+        </View>
+        {selectedUniversity?.id === item.id && (
+          <View className="w-6 h-6 rounded-full bg-primary-500 items-center justify-center">
+            <Text className="text-white text-sm">✓</Text>
+          </View>
+        )}
+      </View>
+    </Pressable>
+  );
+
+  return (
+    <SafeAreaView className="flex-1 bg-white">
+      <View className="flex-1 px-6 pt-12">
+        {/* Progress indicator */}
+        <View className="flex-row mb-8">
+          <View className="flex-1 h-1 bg-primary-500 rounded-full mr-1" />
+          <View className="flex-1 h-1 bg-primary-500 rounded-full mr-1" />
+          <View className="flex-1 h-1 bg-primary-500 rounded-full mr-1" />
+          <View className="flex-1 h-1 bg-gray-200 rounded-full" />
+        </View>
+
+        {/* Title */}
+        <Text className="text-2xl font-bold text-gray-900 mb-2">
+          Select your university
+        </Text>
+        <Text className="text-gray-600 mb-6">
+          Find prayer spaces and connect with students at your campus
+        </Text>
+
+        {/* Search */}
+        <View className="mb-4">
+          <TextInput
+            className="border border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900"
+            placeholder="Search universities..."
+            placeholderTextColor="#9CA3AF"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
+
+        {/* University list */}
+        <View className="flex-1 border border-gray-200 rounded-lg mb-4">
+          {isLoading ? (
+            <View className="flex-1 items-center justify-center">
+              <Text className="text-gray-500">Loading universities...</Text>
+            </View>
+          ) : filteredUniversities.length === 0 ? (
+            <View className="flex-1 items-center justify-center p-6">
+              <Text className="text-gray-500 text-center">
+                No universities found.{'\n'}Try a different search term.
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={filteredUniversities}
+              renderItem={renderUniversity}
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </View>
+
+        {/* Continue button */}
+        <Pressable
+          className={`w-full py-4 rounded-xl items-center mb-3 ${isSaving || !selectedUniversity ? 'bg-gray-400' : 'bg-primary-500 active:bg-primary-600'}`}
+          onPress={handleContinue}
+          disabled={isSaving || !selectedUniversity}
+        >
+          <Text className="text-white text-lg font-semibold">
+            {isSaving ? 'Saving...' : 'Continue'}
+          </Text>
+        </Pressable>
+
+        {/* Skip */}
+        <Pressable onPress={handleSkip} className="items-center py-2">
+          <Text className="text-gray-500">Skip for now</Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
+  );
+}
