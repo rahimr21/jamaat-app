@@ -1,6 +1,24 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import { useEffect } from 'react';
+import { useAuthStore } from '@/stores/authStore';
 
 export default function AuthLayout() {
+  const router = useRouter();
+  const segments = useSegments();
+  const { session, isInitialized, profile } = useAuthStore();
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    if (!session) return;
+    if (profile) {
+      router.replace('/(tabs)');
+      return;
+    }
+    if (segments[1] !== 'profile') {
+      router.replace('/(auth)/profile');
+    }
+  }, [session, profile, isInitialized, segments, router]);
+
   return (
     <Stack
       screenOptions={{

@@ -1,7 +1,7 @@
 # App Flow Documentation
 
 **Last Updated**: January 29, 2026  
-**Version**: 1.0
+**Version**: 1.1
 
 ## Overview
 
@@ -11,12 +11,18 @@ This document outlines all user flows and screen transitions in the Jamaat app. 
 
 ## Navigation Structure
 
+- **Root layout** (`app/_layout.tsx`): Renders `ThemeProvider`, auth init, deep-link handler, and a single root **Stack** with `(auth)` and `(tabs)`. No wrapper component uses navigation hooks above the Stack (avoids "navigation context" errors). Auth redirect logic runs **inside** the navigator: in `(auth)/_layout.tsx` (redirect to tabs or profile) and `(tabs)/_layout.tsx` (redirect to welcome when not signed in).
+
 ```
-App Root
-├── (auth) - Unauthenticated flow
+App Root (Stack)
+├── (auth) - Auth flow
 │   ├── welcome - Entry point
-│   ├── login - Email/Phone authentication
-│   └── student-verification - Optional .edu verification
+│   ├── login - Sign in / Sign up (Email+password or Phone OTP)
+│   ├── verify - OTP or "check email" for magic link
+│   ├── profile - Display name (upsert to public.users)
+│   ├── student - Student opt-in
+│   ├── university - University selection
+│   └── permissions - Location & notifications
 │
 └── (tabs) - Authenticated flow
     ├── index (Feed) - Main screen
@@ -35,21 +41,19 @@ graph TD
     A[App Launch] --> B{User Authenticated?}
     B -->|No| C[Welcome Screen]
     B -->|Yes| D[Main Feed]
-    C --> E[Select Auth Method]
-    E --> F[Email Auth]
-    E --> G[Phone Auth]
-    F --> H[Enter Email]
-    G --> I[Enter Phone]
-    H --> J[Verify Magic Link]
-    I --> K[Verify OTP]
-    J --> L[Create Profile]
-    K --> L
-    L --> M{Are you a student?}
-    M -->|Yes| N[Select University]
-    M -->|Skip| O[Request Location Permission]
-    N --> O
-    O --> P[Request Notification Permission]
-    P --> D[Main Feed]
+    C --> E[Login Screen]
+    E --> F{Email or Phone?}
+    F -->|Email| G[Sign in or Sign up with password]
+    F -->|Phone| H[Enter Phone → OTP]
+    G --> I[Session → redirect by auth layout]
+    H --> J[Verify OTP] --> I
+    I --> K[Create or update profile]
+    K --> L{Are you a student?}
+    L -->|Yes| M[Select University]
+    L -->|Skip| N[Request Location Permission]
+    M --> N
+    N --> O[Request Notification Permission]
+    O --> D[Main Feed]
 ```
 
 ### 1.2 Screen-by-Screen Breakdown
@@ -62,29 +66,19 @@ graph TD
 - **State**: No authentication required
 
 #### Screen 2: Login
-- **Purpose**: Choose authentication method
-- **Elements**: 
-  - "Continue with Email" button
-  - "Continue with Phone" button
-- **Actions**:
-  - Tap Email → Show email input
-  - Tap Phone → Show phone input
-- **State**: Trigger Supabase auth flow
-
-#### Screen 3: Email/Phone Input
-- **Purpose**: Collect authentication credentials
+- **Purpose**: Sign in or sign up; choose Email or Phone
 - **Elements**:
-  - Input field (email or phone with country code)
-  - "Continue" button
-  - "Terms & Privacy" links
+  - **Sign in / Sign up** toggle and footer link ("Don't have an account? Sign up")
+  - **Email / Phone** tab to choose method
+  - **Email**: email, password, and (for sign-up) confirm password
+  - **Phone**: phone number input
+  - Optional "Sign in with magic link instead" (email only)
 - **Actions**:
-  - Submit → Send magic link/OTP
-  - Show loading state
-  - On success → Navigate to verification
-- **Validation**:
-  - Email: Valid format (RFC 5322)
-  - Phone: Valid E.164 format (+1234567890)
-- **Errors**: "Invalid email" / "Invalid phone number"
+  - **Email + password**: Sign in → `signInWithPassword`; Sign up → `signUpWithEmail`. Session triggers redirect from `(auth)/_layout` to profile or tabs (no verification screen).
+  - **Phone**: Submit → `signInWithOtp` → Navigate to Verify (OTP).
+  - **Magic link**: `signInWithOtp` → Navigate to Verify ("Check your email"); opening `jamaat://auth/callback` completes session via deep-link handler.
+- **Validation**: Email format; password min 6 chars; confirm password match (sign-up); phone length.
+- **Errors**: Shown from Supabase (e.g. "Invalid login credentials", "Email already registered").
 
 #### Screen 4: Verification
 - **Purpose**: Verify ownership of email/phone
@@ -99,12 +93,12 @@ graph TD
 - **Errors**: "Invalid code" / "Code expired"
 
 #### Screen 5: Create Profile
-- **Purpose**: Set display name
+- **Purpose**: Set or update display name
 - **Elements**:
   - Display name input (max 50 chars)
   - "Continue" button
 - **Actions**:
-  - Submit → Create user record in database
+  - Submit → **Upsert** user row in `public.users` (insert or update by `id`). Works whether or not a DB trigger created a row on signup.
   - On success → Navigate to student opt-in
 - **Validation**: Name required, 2-50 chars
 - **Default**: Pre-fill with name from email (if available)
@@ -767,6 +761,7 @@ await Analytics.logEvent('session_created', {
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | Jan 29, 2026 | Initial document |
+| 1.1 | Jan 29, 2026 | Auth: Sign in/Sign up + email+password primary, magic link optional; navigation: redirect in (auth)/(tabs) layouts, no AuthGate; profile upsert |
 
 ---
 

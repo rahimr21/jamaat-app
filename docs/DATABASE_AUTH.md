@@ -1,7 +1,7 @@
 # Database & Authentication Documentation
 
 **Last Updated**: January 29, 2026  
-**Version**: 1.0
+**Version**: 1.1
 
 ## Overview
 
@@ -604,40 +604,49 @@ Jamaat uses **Supabase Auth** for authentication, which provides:
 - Token refresh handling
 - Row Level Security integration
 
-### 6.2 Auth Flow (Email Magic Link)
+### 6.2 Auth Flow (Email + Password — Primary)
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant App
-    participant Supabase Auth
-    participant Email Service
-    participant Database
+Email sign-in and sign-up use **password-based** auth so users are not dependent on email delivery. Magic link remains optional.
 
-    User->>App: Enter email
-    App->>Supabase Auth: signInWithOtp(email)
-    Supabase Auth->>Email Service: Send magic link
-    Email Service->>User: Email with link
-    User->>App: Click magic link
-    App->>Supabase Auth: Verify token
-    Supabase Auth->>App: Return JWT + user
-    App->>Database: Create user profile
-    App->>User: Navigate to main app
-```
+**Sign in**: `signInWithPassword({ email, password })` → session → redirect from `(auth)/_layout` to profile or tabs.
 
-**Implementation**:
+**Sign up**: `signUp({ email, password, options: { emailRedirectTo: 'jamaat://auth/callback' } })` → if "Confirm email" is **off** in Supabase, session is created immediately and user is redirected to profile; if **on**, user must click the confirmation link (see deep linking below).
 
 ```typescript
-// Sign up with email
-const { data, error } = await supabase.auth.signInWithOtp({
-  email: 'user@example.com',
-  options: {
-    emailRedirectTo: 'jamaat://auth/callback',
-  },
-});
+// Sign in
+const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-// App receives redirect → Auto-authenticated
+// Sign up
+const { error } = await supabase.auth.signUp({
+  email,
+  password,
+  options: { emailRedirectTo: 'jamaat://auth/callback' },
+});
 ```
+
+Profile creation: the profile screen **upserts** into `public.users` (insert or update by `id`). An optional DB trigger (`handle_new_auth_user`) can create a row on `auth.users` insert so `fetchProfile` finds a row before the user reaches the profile screen.
+
+### 6.2b Auth Flow (Email Magic Link — Optional)
+
+For "Sign in with magic link instead" on the login screen:
+
+```typescript
+const { error } = await supabase.auth.signInWithOtp({
+  email,
+  options: { emailRedirectTo: 'jamaat://auth/callback' },
+});
+// User opens link → app handles jamaat://auth/callback (see Deep linking)
+```
+
+### 6.2c Deep Linking (Email Confirmation / Magic Link)
+
+When the user opens a link like `jamaat://auth/callback?access_token=...&refresh_token=...` (or with `#`), the app:
+
+1. Listens via `Linking.getInitialURL()` and `Linking.addEventListener('url')` (in root layout; no navigation hooks).
+2. Calls `setSessionFromUrl(url)` on the auth store, which parses `access_token` and `refresh_token` and calls `supabase.auth.setSession()`.
+3. `onAuthStateChange` fires → redirect logic in `(auth)/_layout` sends the user to profile or tabs.
+
+Redirect URLs `jamaat://**` and `jamaat://auth/callback` must be allowlisted in Supabase Dashboard → Authentication → URL configuration; otherwise the confirmation link redirects to the Site URL (e.g. localhost).
 
 ### 6.3 Auth Flow (Phone OTP)
 
@@ -701,15 +710,9 @@ const { data: { user }, error } = await supabase.auth.getUser();
 **Listening to Auth Changes**:
 ```typescript
 supabase.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_IN') {
-    console.log('User signed in:', session.user);
-    // Navigate to main app
-  } else if (event === 'SIGNED_OUT') {
-    console.log('User signed out');
-    // Navigate to login
-  } else if (event === 'TOKEN_REFRESHED') {
-    console.log('Token refreshed');
-  }
+  // Auth store updates session/profile; redirects are handled in layouts:
+  // - (auth)/_layout: if session + profile → replace to (tabs); if session, no profile → replace to profile
+  // - (tabs)/_layout: if !session → replace to (auth)/welcome
 });
 ```
 
@@ -1025,6 +1028,7 @@ Configure in Supabase Dashboard → Settings → Database:
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | Jan 29, 2026 | Initial database & auth documentation |
+| 1.1 | Jan 29, 2026 | Auth: email+password primary (6.2), optional magic link (6.2b), deep linking (6.2c); redirect in layouts; profile upsert and optional trigger |
 
 ---
 

@@ -28,16 +28,19 @@ export default function ProfileScreen() {
     setIsLoading(true);
 
     try {
-      const { error: insertError } = await supabase
+      const { error: upsertError } = await supabase
         .from('users')
-        .insert({
-          id: user?.id,
-          email: user?.email,
-          phone: user?.phone,
-          display_name: displayName.trim(),
-        });
+        .upsert(
+          {
+            id: user?.id,
+            email: user?.email,
+            phone: user?.phone,
+            display_name: displayName.trim(),
+          },
+          { onConflict: 'id' }
+        );
 
-      if (insertError) throw insertError;
+      if (upsertError) throw upsertError;
 
       await fetchProfile();
       router.push('/(auth)/student');

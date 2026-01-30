@@ -2,7 +2,8 @@ import '@/global.css';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
-import { Slot, useRouter, useSegments } from 'expo-router';
+import * as Linking from 'expo-linking';
+import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
@@ -21,46 +22,23 @@ export const unstable_settings = {
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-function AuthGate({ children }: { children: React.ReactNode }) {
-  const { session, isLoading, isInitialized, profile, initialize } = useAuthStore();
-  const segments = useSegments();
-  const router = useRouter();
-
-  // Initialize auth state on mount
+// Handles deep link (email confirmation / magic link). No navigation hooks so safe outside Stack.
+function DeepLinkHandler() {
   useEffect(() => {
-    initialize();
-  }, [initialize]);
-
-  // Handle navigation based on auth state
-  useEffect(() => {
-    if (!isInitialized) return;
-
-    const inAuthGroup = segments[0] === '(auth)';
-
-    if (!session) {
-      // Not signed in, redirect to auth
-      if (!inAuthGroup) {
-        router.replace('/(auth)/welcome');
+    const handleUrl = (url: string) => {
+      if (url.startsWith('jamaat://auth/callback')) {
+        useAuthStore.getState().setSessionFromUrl(url);
       }
-    } else if (!profile) {
-      // Signed in but no profile, redirect to profile creation
-      if (!inAuthGroup || segments[1] !== 'profile') {
-        router.replace('/(auth)/profile');
-      }
-    } else {
-      // Signed in with profile, redirect to main app
-      if (inAuthGroup) {
-        router.replace('/(tabs)');
-      }
-    }
-  }, [session, profile, isInitialized, segments, router]);
+    };
 
-  // Show nothing while loading (splash screen is visible)
-  if (isLoading || !isInitialized) {
-    return null;
-  }
+    Linking.getInitialURL().then((url) => {
+      if (url) handleUrl(url);
+    });
 
-  return <>{children}</>;
+    const subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    return () => subscription.remove();
+  }, []);
+  return null;
 }
 
 export default function RootLayout() {
@@ -87,9 +65,21 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <AuthGate>
-        <Slot />
-      </AuthGate>
+      <AuthInit />
+      <DeepLinkHandler />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(tabs)" />
+      </Stack>
     </ThemeProvider>
   );
+}
+
+// Initialize auth state on mount. No navigation hooks.
+function AuthInit() {
+  const initialize = useAuthStore((s) => s.initialize);
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+  return null;
 }

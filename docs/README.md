@@ -123,10 +123,10 @@ This directory contains comprehensive documentation for the Jamaat mobile applic
   - Session visibility rules
   - Attendee permissions
 - Authentication system
-  - Email magic link flow
+  - Email + password (primary sign-in/sign-up)
+  - Optional magic link; deep linking (jamaat://auth/callback)
   - Phone OTP flow
-  - Session management
-  - User metadata
+  - Session management; redirect logic in (auth)/(tabs) layouts
 - Data access patterns (common queries, optimized joins, pagination)
 - Migration system (Supabase migrations)
 - Backup & recovery strategies
@@ -140,7 +140,19 @@ This directory contains comprehensive documentation for the Jamaat mobile applic
 
 ---
 
-### 6. **SECURITY.md** - Security Best Practices
+### 6. **SUPABASE_AUTH_SETUP.md** - Supabase Auth Configuration
+**Purpose**: Project-specific Supabase auth setup and redirect URLs  
+**Use when**: Configuring the Supabase project, fixing "confirm email" links (localhost vs app), enabling email/phone providers
+
+**Contains**:
+- Auth flow summary (email+password primary, optional magic link, phone OTP)
+- Verified project state (URL, keys, tables)
+- Dashboard steps: Email/Phone providers, Redirect URLs (jamaat://**)
+- Note on "Confirm email" off for immediate sign-up
+
+---
+
+### 7. **SECURITY.md** - Security Best Practices
 **Purpose**: Comprehensive security guidelines and threat mitigation  
 **Use when**: Implementing security features, reviewing code for vulnerabilities, handling sensitive data
 
@@ -194,11 +206,12 @@ This directory contains comprehensive documentation for the Jamaat mobile applic
 docs/
 ├── README.md                 # This file - Documentation overview
 ├── PRD.md                    # Master product requirements document
-├── APP_FLOW.md              # User journeys and navigation
-├── FRONTEND_DESIGN.md       # UI/UX design system
-├── BACKEND.md               # Server architecture and APIs
-├── DATABASE_AUTH.md         # Database schema and authentication
-└── SECURITY.md              # Security guidelines and best practices
+├── APP_FLOW.md               # User journeys and navigation
+├── FRONTEND_DESIGN.md        # UI/UX design system
+├── BACKEND.md                # Server architecture and APIs
+├── DATABASE_AUTH.md          # Database schema and authentication
+├── SUPABASE_AUTH_SETUP.md    # Supabase auth config (URLs, providers)
+└── SECURITY.md               # Security guidelines and best practices
 ```
 
 ---
@@ -261,7 +274,7 @@ docs/
 
 **Implementing authentication**:
 1. Read `DATABASE_AUTH.md` → Section 6 (Authentication System)
-2. Read `BACKEND.md` → Section 5 (Authentication Flow)
+2. Read `SUPABASE_AUTH_SETUP.md` for project URL, keys, and Dashboard steps
 3. Read `SECURITY.md` → Section 5 (Authentication Security)
 
 **Setting up API integration**:

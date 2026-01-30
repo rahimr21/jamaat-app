@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, Pressable, Alert, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
-import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
+
+// Check if running in Expo Go (where push notifications are not supported)
+const isExpoGo = Constants.appOwnership === 'expo';
 
 export default function PermissionsScreen() {
   const router = useRouter();
@@ -13,7 +16,15 @@ export default function PermissionsScreen() {
   
   const [locationGranted, setLocationGranted] = useState(false);
   const [notificationsGranted, setNotificationsGranted] = useState(false);
+  const [notificationsUnavailable, setNotificationsUnavailable] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Check if push notifications are available
+  useEffect(() => {
+    if (isExpoGo) {
+      setNotificationsUnavailable(true);
+    }
+  }, []);
 
   const requestLocation = async () => {
     try {
@@ -36,21 +47,45 @@ export default function PermissionsScreen() {
   };
 
   const requestNotifications = async () => {
+    // If in Expo Go, show a message instead of trying to enable
+    if (isExpoGo) {
+      Alert.alert(
+        'Push Notifications',
+        'Push notifications are not available in Expo Go. They will work in the production app.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     try {
+      // Dynamically import expo-notifications only when needed
+      const Notifications = await import('expo-notifications');
+      
       const { status } = await Notifications.requestPermissionsAsync();
       setNotificationsGranted(status === 'granted');
 
       if (status === 'granted') {
-        // Get and save push token
-        const token = (await Notifications.getExpoPushTokenAsync()).data;
-        
-        await supabase
-          .from('users')
-          .update({ expo_push_token: token })
-          .eq('id', user?.id);
+        try {
+          // Get and save push token
+          const token = (await Notifications.getExpoPushTokenAsync()).data;
+          
+          await supabase
+            .from('users')
+            .update({ expo_push_token: token })
+            .eq('id', user?.id);
+        } catch (tokenError) {
+          console.error('Error getting push token:', tokenError);
+          // Token failed but permission was granted - that's okay
+        }
       }
     } catch (error) {
       console.error('Error requesting notifications:', error);
+      setNotificationsUnavailable(true);
+      Alert.alert(
+        'Notifications Unavailable',
+        'Push notifications are not available on this device. You can still use the app without them.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -116,20 +151,39 @@ export default function PermissionsScreen() {
                 Notifications
               </Text>
               <Text className="text-gray-600 text-sm mb-3">
-                Get notified about prayers near you and when others join
+                {notificationsUnavailable && isExpoGo
+                  ? 'Push notifications are not available in Expo Go'
+                  : 'Get notified about prayers near you and when others join'}
               </Text>
-              <Pressable
-                className={`py-2 px-4 rounded-lg items-center ${notificationsGranted ? 'bg-green-100' : 'bg-primary-500 active:bg-primary-600'}`}
-                onPress={requestNotifications}
-                disabled={notificationsGranted}
-              >
-                <Text className={notificationsGranted ? 'text-green-700 font-medium' : 'text-white font-medium'}>
-                  {notificationsGranted ? '✓ Enabled' : 'Enable Notifications'}
-                </Text>
-              </Pressable>
+              {notificationsUnavailable ? (
+                <View className="py-2 px-4 rounded-lg items-center bg-gray-200">
+                  <Text className="text-gray-500 font-medium">
+                    {isExpoGo ? 'Available in production' : 'Not available'}
+                  </Text>
+                </View>
+              ) : (
+                <Pressable
+                  className={`py-2 px-4 rounded-lg items-center ${notificationsGranted ? 'bg-green-100' : 'bg-primary-500 active:bg-primary-600'}`}
+                  onPress={requestNotifications}
+                  disabled={notificationsGranted}
+                >
+                  <Text className={notificationsGranted ? 'text-green-700 font-medium' : 'text-white font-medium'}>
+                    {notificationsGranted ? '✓ Enabled' : 'Enable Notifications'}
+                  </Text>
+                </Pressable>
+              )}
             </View>
           </View>
         </View>
+
+        {/* Expo Go notice */}
+        {isExpoGo && (
+          <View className="mb-4 p-3 bg-yellow-50 rounded-lg">
+            <Text className="text-yellow-800 text-sm text-center">
+              You're using Expo Go. Some features like push notifications will be available in the production app.
+            </Text>
+          </View>
+        )}
 
         {/* Spacer */}
         <View className="flex-1" />
