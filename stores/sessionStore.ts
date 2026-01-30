@@ -36,17 +36,29 @@ export const useSessionStore = create<SessionState>((set) => ({
   error: null,
   hasMore: true,
 
-  fetchSessions: async ({ latitude, longitude, radiusMeters = 3218 }) => {
+  fetchSessions: async ({ latitude, longitude, radiusMeters = 15000 }) => {
     set({ isLoading: true, error: null });
 
+    const fromTime = new Date().toISOString();
     try {
       const { data, error } = await supabase.rpc('get_sessions_within_radius', {
         user_lat: latitude,
         user_lng: longitude,
         radius_meters: radiusMeters,
-        from_time: new Date().toISOString(),
+        from_time: fromTime,
         limit_count: 50,
       });
+
+      if (__DEV__) {
+        console.log('[fetchSessions]', {
+          latitude,
+          longitude,
+          radiusMeters,
+          from_time: fromTime,
+          resultCount: data?.length ?? 0,
+          error: error?.message ?? null,
+        });
+      }
 
       if (error) throw error;
 
@@ -57,6 +69,9 @@ export const useSessionStore = create<SessionState>((set) => ({
       });
     } catch (error) {
       console.error('Error fetching sessions:', error);
+      if (__DEV__) {
+        console.log('[fetchSessions] error', (error as Error).message);
+      }
       set({
         error: (error as Error).message,
         isLoading: false,
@@ -77,8 +92,8 @@ export const useSessionStore = create<SessionState>((set) => ({
       if (input.prayerSpaceId) {
         insertData.prayer_space_id = input.prayerSpaceId;
       } else if (input.customLocation) {
-        // Use PostGIS format for geography
-        insertData.custom_location = `POINT(${input.customLocation.longitude} ${input.customLocation.latitude})`;
+        // Use EWKT with SRID so Postgres stores geography correctly for get_sessions_within_radius
+        insertData.custom_location = `SRID=4326;POINT(${input.customLocation.longitude} ${input.customLocation.latitude})`;
         insertData.custom_location_name = input.customLocationName;
       }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, TextInput, Platform } from 'react-native';
+import { View, Text, Pressable, ScrollView, TextInput, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -40,6 +40,7 @@ export default function CreateScreen() {
   // Data state
   const [prayerSpaces, setPrayerSpaces] = useState<PrayerSpace[]>([]);
   const [isLoadingSpaces, setIsLoadingSpaces] = useState(true);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,9 +72,12 @@ export default function CreateScreen() {
   }, [profile?.university_id]);
 
   // Get current location when selecting "current location"
+  // Use cached position first (instant when feed already requested location), then low-accuracy fix for speed
   useEffect(() => {
     if (locationType === 'current') {
       const getLocation = async () => {
+        setIsLoadingLocation(true);
+        setError(null);
         try {
           const { status } = await Location.getForegroundPermissionsAsync();
           if (status !== 'granted') {
@@ -81,13 +85,28 @@ export default function CreateScreen() {
             return;
           }
 
-          const location = await Location.getCurrentPositionAsync({});
+          // Try last known position first (fast when app already has location from feed)
+          const cached = await Location.getLastKnownPositionAsync({ maxAge: 120000 });
+          if (cached) {
+            setCurrentLocation({
+              latitude: cached.coords.latitude,
+              longitude: cached.coords.longitude,
+            });
+            return;
+          }
+
+          // No cache: request current position with low accuracy for faster response
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Low,
+          });
           setCurrentLocation({
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
           });
         } catch (err) {
           setError('Could not get your location');
+        } finally {
+          setIsLoadingLocation(false);
         }
       };
 
@@ -269,7 +288,12 @@ export default function CreateScreen() {
                   />
                 </>
               ) : (
-                <Text className="text-gray-500">Getting your location...</Text>
+                <View className="flex-row items-center">
+                  {isLoadingLocation && (
+                    <ActivityIndicator size="small" color="#6B7280" style={{ marginRight: 8 }} />
+                  )}
+                  <Text className="text-gray-500">Getting your location...</Text>
+                </View>
               )}
             </View>
           )}

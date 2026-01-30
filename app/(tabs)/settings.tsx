@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, Pressable, Switch, ScrollView, Alert } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, Pressable, Switch, ScrollView, Alert, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuthStore } from '@/stores/authStore';
@@ -59,6 +59,19 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { profile, signOut, fetchProfile } = useAuthStore();
 
+  // Edit display name modal
+  const [showEditNameModal, setShowEditNameModal] = useState(false);
+  const [editNameValue, setEditNameValue] = useState(profile?.display_name ?? '');
+  const [editNameSaving, setEditNameSaving] = useState(false);
+  const [editNameError, setEditNameError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (showEditNameModal) {
+      setEditNameValue(profile?.display_name ?? '');
+      setEditNameError(null);
+    }
+  }, [showEditNameModal, profile?.display_name]);
+
   // Notification preferences
   const [newPrayers, setNewPrayers] = useState(profile?.notification_preferences?.new_prayers ?? true);
   const [prayerJoined, setPrayerJoined] = useState(profile?.notification_preferences?.prayer_joined ?? true);
@@ -78,6 +91,34 @@ export default function SettingsScreen() {
       .eq('id', profile.id);
 
     await fetchProfile();
+  };
+
+  const handleSaveDisplayName = async () => {
+    const trimmed = editNameValue.trim();
+    if (trimmed.length < 2) {
+      setEditNameError('Name must be at least 2 characters');
+      return;
+    }
+    if (trimmed.length > 50) {
+      setEditNameError('Name must be less than 50 characters');
+      return;
+    }
+    if (!profile) return;
+    setEditNameError(null);
+    setEditNameSaving(true);
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ display_name: trimmed })
+        .eq('id', profile.id);
+      if (error) throw error;
+      await fetchProfile();
+      setShowEditNameModal(false);
+    } catch (err) {
+      setEditNameError((err as Error).message);
+    } finally {
+      setEditNameSaving(false);
+    }
   };
 
   const handleLogout = () => {
@@ -132,7 +173,7 @@ export default function SettingsScreen() {
             label="University"
             value={profile?.is_student ? 'Linked' : 'Not a student'}
             onPress={() => {
-              router.push('/(auth)/university');
+              router.push('/(auth)/university?from=settings');
             }}
           />
         </SettingsSection>
@@ -221,6 +262,54 @@ export default function SettingsScreen() {
           Made with ❤️ for the Muslim community
         </Text>
       </ScrollView>
+
+      {/* Edit display name modal */}
+      <Modal
+        visible={showEditNameModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowEditNameModal(false)}
+      >
+        <Pressable
+          className="flex-1 bg-black/50 justify-center px-6"
+          onPress={() => setShowEditNameModal(false)}
+        >
+          <Pressable
+            className="bg-white rounded-xl p-6"
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text className="text-lg font-semibold text-gray-900 mb-2">Edit display name</Text>
+            <TextInput
+              className="border border-gray-300 rounded-lg px-4 py-3 text-base text-gray-900 mb-2"
+              placeholder="Your name"
+              placeholderTextColor="#9CA3AF"
+              value={editNameValue}
+              onChangeText={setEditNameValue}
+              autoCapitalize="words"
+              autoComplete="name"
+              maxLength={50}
+            />
+            {editNameError && (
+              <Text className="text-red-500 text-sm mb-2">{editNameError}</Text>
+            )}
+            <View className="flex-row gap-3 mt-2">
+              <Pressable
+                className="flex-1 py-3 rounded-lg bg-gray-100 items-center"
+                onPress={() => setShowEditNameModal(false)}
+              >
+                <Text className="text-gray-700 font-medium">Cancel</Text>
+              </Pressable>
+              <Pressable
+                className={`flex-1 py-3 rounded-lg items-center ${editNameSaving || editNameValue.trim().length < 2 ? 'bg-gray-400' : 'bg-primary-500'}`}
+                onPress={handleSaveDisplayName}
+                disabled={editNameSaving || editNameValue.trim().length < 2}
+              >
+                <Text className="text-white font-medium">{editNameSaving ? 'Saving...' : 'Save'}</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }

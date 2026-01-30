@@ -28,6 +28,7 @@ export interface User {
   university_id: string | null;
   expo_push_token: string | null;
   notification_preferences: NotificationPreferences;
+  onboarding_complete: boolean;
   created_at: string;
   updated_at: string;
 }

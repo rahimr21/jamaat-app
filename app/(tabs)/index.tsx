@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { View, Text, FlatList, RefreshControl, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { useAuthStore } from '@/stores/authStore';
 import { useSessionStore } from '@/stores/sessionStore';
@@ -140,7 +140,7 @@ function EmptyState() {
 export default function FeedScreen() {
   const router = useRouter();
   const { user, profile } = useAuthStore();
-  const { sessions, isLoading, fetchSessions, joinSession, leaveSession } = useSessionStore();
+  const { sessions, isLoading, error: sessionError, clearError, fetchSessions, joinSession, leaveSession } = useSessionStore();
   
   const [refreshing, setRefreshing] = useState(false);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -171,12 +171,19 @@ export default function FeedScreen() {
     getLocation();
   }, []);
 
-  // Fetch sessions when location is available
+  // Fetch sessions when location is available (initial load)
   useEffect(() => {
     if (location) {
       fetchSessions(location);
     }
   }, [location, fetchSessions]);
+
+  // Refetch when feed tab gains focus (e.g. returning from Create)
+  useFocusEffect(
+    useCallback(() => {
+      if (location) fetchSessions(location);
+    }, [location, fetchSessions])
+  );
 
   const onRefresh = useCallback(async () => {
     if (!location) return;
@@ -238,6 +245,16 @@ export default function FeedScreen() {
           </Pressable>
         </View>
       </View>
+
+      {/* RPC error banner */}
+      {sessionError && (
+        <View className="mx-4 mt-2 p-3 bg-red-50 border border-red-200 rounded-lg flex-row items-center justify-between">
+          <Text className="text-red-700 text-sm flex-1 mr-2">{sessionError}</Text>
+          <Pressable onPress={clearError} className="px-2 py-1">
+            <Text className="text-red-600 text-sm font-medium">Dismiss</Text>
+          </Pressable>
+        </View>
+      )}
 
       {/* Feed */}
       {sessions.length === 0 && !isLoading ? (

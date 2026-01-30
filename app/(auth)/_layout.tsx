@@ -10,8 +10,16 @@ export default function AuthLayout() {
   useEffect(() => {
     if (!isInitialized) return;
     if (!session) return;
-    if (profile) {
+    if (profile?.onboarding_complete) {
       router.replace('/(tabs)');
+      return;
+    }
+    if (profile && !profile.onboarding_complete) {
+      const segment = segments[1];
+      const inOnboardingFlow = ['profile', 'student', 'university', 'permissions'].includes(segment as string);
+      if (!inOnboardingFlow) {
+        router.replace('/(auth)/student');
+      }
       return;
     }
     if (segments[1] !== 'profile') {

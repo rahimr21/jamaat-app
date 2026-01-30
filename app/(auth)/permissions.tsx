@@ -12,7 +12,7 @@ const isExpoGo = Constants.appOwnership === 'expo';
 
 export default function PermissionsScreen() {
   const router = useRouter();
-  const { user } = useAuthStore();
+  const { user, fetchProfile } = useAuthStore();
   
   const [locationGranted, setLocationGranted] = useState(false);
   const [notificationsGranted, setNotificationsGranted] = useState(false);
@@ -91,8 +91,19 @@ export default function PermissionsScreen() {
 
   const handleComplete = async () => {
     setIsLoading(true);
-    // Auth state will redirect to (tabs) automatically
-    router.replace('/(tabs)');
+    try {
+      await supabase
+        .from('users')
+        .update({ onboarding_complete: true })
+        .eq('id', user?.id);
+      await fetchProfile();
+      router.replace('/(tabs)');
+    } catch (err) {
+      console.error('Error marking onboarding complete:', err);
+      router.replace('/(tabs)');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

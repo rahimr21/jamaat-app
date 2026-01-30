@@ -1,0 +1,14 @@
+---
+description: Use Supabase MCP server for database and Supabase operations in this project
+alwaysApply: true
+---
+
+# Supabase via MCP
+
+In this project, **always use the Supabase MCP server first** for any Supabase-related work before suggesting manual steps to the user.
+
+- **Migrations**: Use the MCP `apply_migration` tool to apply migrations to the linked Supabase project. Do not tell the user to run migrations manually unless MCP is unavailable or fails.
+- **SQL / schema**: Prefer MCP tools (`execute_sql`, `apply_migration`, `list_migrations`, `list_tables`, etc.) to verify or change the database.
+- **Types**: Use `generate_typescript_types` if you need to refresh DB types.
+
+Only suggest manual steps (e.g. "run this in the Supabase SQL Editor") if the MCP server is not available or returns an error that cannot be resolved via MCP.

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, FlatList } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
@@ -8,14 +8,17 @@ import type { University } from '@/types';
 
 export default function UniversityScreen() {
   const router = useRouter();
-  const { user, fetchProfile } = useAuthStore();
-  
+  const { from } = useLocalSearchParams<{ from?: string }>();
+  const fromSettings = from === 'settings';
+  const { user, profile, fetchProfile } = useAuthStore();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [universities, setUniversities] = useState<University[]>([]);
   const [filteredUniversities, setFilteredUniversities] = useState<University[]>([]);
   const [selectedUniversity, setSelectedUniversity] = useState<University | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   // Fetch universities on mount
   useEffect(() => {
@@ -27,14 +30,20 @@ export default function UniversityScreen() {
         .order('name');
 
       if (!error && data) {
-        setUniversities(data as University[]);
-        setFilteredUniversities(data as University[]);
+        const list = data as University[];
+        setUniversities(list);
+        setFilteredUniversities(list);
+        // Pre-select current university when editing from settings
+        if (profile?.university_id && fromSettings) {
+          const current = list.find((u) => u.id === profile.university_id);
+          if (current) setSelectedUniversity(current);
+        }
       }
       setIsLoading(false);
     };
 
     fetchUniversities();
-  }, []);
+  }, [fromSettings, profile?.university_id]);
 
   // Filter universities based on search
   useEffect(() => {
@@ -65,7 +74,11 @@ export default function UniversityScreen() {
       if (error) throw error;
 
       await fetchProfile();
-      router.push('/(auth)/permissions');
+      if (fromSettings) {
+        router.back();
+      } else {
+        router.push('/(auth)/permissions');
+      }
     } catch (err) {
       console.error('Error saving university:', err);
     } finally {
@@ -74,7 +87,33 @@ export default function UniversityScreen() {
   };
 
   const handleSkip = () => {
-    router.push('/(auth)/permissions');
+    if (fromSettings) {
+      router.back();
+    } else {
+      router.push('/(auth)/permissions');
+    }
+  };
+
+  const handleRemoveUniversity = async () => {
+    setIsRemoving(true);
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ is_student: false, university_id: null })
+        .eq('id', user?.id);
+
+      if (error) throw error;
+      await fetchProfile();
+      if (fromSettings) {
+        router.back();
+      } else {
+        router.push('/(auth)/permissions');
+      }
+    } catch (err) {
+      console.error('Error removing university:', err);
+    } finally {
+      setIsRemoving(false);
+    }
   };
 
   const renderUniversity = ({ item }: { item: University }) => (
@@ -150,6 +189,19 @@ export default function UniversityScreen() {
           )}
         </View>
 
+        {/* Remove university (when user has one, e.g. from settings) */}
+        {(profile?.university_id || profile?.is_student) && (
+          <Pressable
+            className="w-full py-3 rounded-xl items-center mb-3 border border-red-200 bg-red-50 active:bg-red-100"
+            onPress={handleRemoveUniversity}
+            disabled={isRemoving}
+          >
+            <Text className="text-red-600 font-medium">
+              {isRemoving ? 'Removing...' : "I'm not a student / Remove university"}
+            </Text>
+          </Pressable>
+        )}
+
         {/* Continue button */}
         <Pressable
           className={`w-full py-4 rounded-xl items-center mb-3 ${isSaving || !selectedUniversity ? 'bg-gray-400' : 'bg-primary-500 active:bg-primary-600'}`}
@@ -157,13 +209,13 @@ export default function UniversityScreen() {
           disabled={isSaving || !selectedUniversity}
         >
           <Text className="text-white text-lg font-semibold">
-            {isSaving ? 'Saving...' : 'Continue'}
+            {isSaving ? 'Saving...' : fromSettings ? 'Save' : 'Continue'}
           </Text>
         </Pressable>
 
-        {/* Skip */}
+        {/* Skip / Back */}
         <Pressable onPress={handleSkip} className="items-center py-2">
-          <Text className="text-gray-500">Skip for now</Text>
+          <Text className="text-gray-500">{fromSettings ? 'Back' : 'Skip for now'}</Text>
         </Pressable>
       </View>
     </SafeAreaView>
