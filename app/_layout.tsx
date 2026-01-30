@@ -9,10 +9,12 @@ import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
+import { Toast, OfflineBanner } from '@/components/common';
 import { useAuthStore } from '@/stores/authStore';
+import { useToastStore } from '@/stores/toastStore';
 
 export {
-  ErrorBoundary,
+    ErrorBoundary
 } from 'expo-router';
 
 export const unstable_settings = {
@@ -67,6 +69,8 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AuthInit />
       <DeepLinkHandler />
+      <ToastProvider />
+      <OfflineBanner />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
@@ -82,4 +86,10 @@ function AuthInit() {
     initialize();
   }, [initialize]);
   return null;
+}
+
+// Global toast notifications
+function ToastProvider() {
+  const { visible, message, type, hideToast } = useToastStore();
+  return <Toast visible={visible} message={message} type={type} onHide={hideToast} />;
 }

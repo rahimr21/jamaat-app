@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
-import { View, Text, Pressable, Switch, ScrollView, Alert, Modal, TextInput } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/stores/authStore';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 interface SettingsRowProps {
   label: string;
@@ -150,10 +150,7 @@ export default function SettingsScreen() {
           <SettingsRow
             label="Display Name"
             value={profile?.display_name}
-            onPress={() => {
-              // TODO: Implement edit name modal
-              Alert.alert('Edit Name', 'Coming soon!');
-            }}
+            onPress={() => setShowEditNameModal(true)}
           />
           <Divider />
           <SettingsRow

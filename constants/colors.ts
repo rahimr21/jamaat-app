@@ -42,3 +42,29 @@ export const colors = {
 } as const;
 
 export type Colors = typeof colors;
+
+// Legacy Colors export for backward compatibility with existing components
+const themeColors = {
+  light: {
+    text: colors.gray[900],
+    background: colors.background,
+    tint: colors.primary[500],
+    tabIconDefault: colors.gray[500],
+    tabIconSelected: colors.primary[500],
+    surface: colors.surface,
+    border: colors.gray[300],
+    textSecondary: colors.gray[600],
+  },
+  dark: {
+    text: '#FFFFFF',
+    background: '#1A1D1F',
+    tint: colors.primary[400],
+    tabIconDefault: '#6C737A',
+    tabIconSelected: colors.primary[400],
+    surface: '#25282B',
+    border: '#3A3F45',
+    textSecondary: colors.gray[500],
+  },
+};
+
+export default themeColors;

@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useSessionStore } from '@/stores/sessionStore';
 import { supabase } from '@/lib/supabase';
 import { Button, Input } from '@/components/ui';
+import { createSessionSchema, getFirstZodError } from '@/lib/utils/validation';
 import type { PrayerType, PrayerSpace } from '@/types';
 
 const prayerTypes: { type: PrayerType; label: string; icon: string }[] = [
@@ -117,19 +118,21 @@ export default function CreateScreen() {
   const handleSubmit = async () => {
     setError(null);
 
-    // Validation
-    if (locationType === 'campus' && !selectedSpace) {
-      setError('Please select a prayer space');
-      return;
-    }
+    // Build form data for validation
+    const formData = {
+      prayerType,
+      locationType,
+      prayerSpaceId: locationType === 'campus' ? selectedSpace?.id : undefined,
+      customLocation: locationType === 'current' ? currentLocation : undefined,
+      customLocationName: locationType === 'current' ? customLocationName || undefined : undefined,
+      scheduledTime: scheduledDate,
+      notes: notes.trim() || undefined,
+    };
 
-    if (locationType === 'current' && !currentLocation) {
-      setError('Could not get your location');
-      return;
-    }
-
-    if (scheduledDate <= new Date()) {
-      setError('Please select a future time');
+    // Validate with Zod
+    const validation = createSessionSchema.safeParse(formData);
+    if (!validation.success) {
+      setError(getFirstZodError(validation.error));
       return;
     }
 

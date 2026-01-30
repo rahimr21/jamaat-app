@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/stores/authStore';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ProfileScreen() {
   const router = useRouter();

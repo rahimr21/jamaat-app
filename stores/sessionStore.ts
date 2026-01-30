@@ -1,12 +1,16 @@
-import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
-import type { SessionWithDetails, PrayerSession, Location } from '@/types';
+import type { Location, PrayerSession, SessionWithDetails } from '@/types';
+import type { RealtimeChannel } from '@supabase/supabase-js';
+import { create } from 'zustand';
+import { useToastStore } from './toastStore';
 
 interface SessionState {
   sessions: SessionWithDetails[];
+  attendingSessions: Set<string>;
   isLoading: boolean;
   error: string | null;
   hasMore: boolean;
+  realtimeChannel: RealtimeChannel | null;
 
   // Actions
   fetchSessions: (params: {
@@ -14,9 +18,12 @@ interface SessionState {
     longitude: number;
     radiusMeters?: number;
   }) => Promise<void>;
+  fetchAttendingSessions: (userId: string) => Promise<void>;
   createSession: (input: CreateSessionInput) => Promise<{ error: Error | null; data: PrayerSession | null }>;
   joinSession: (sessionId: string, userId: string) => Promise<{ error: Error | null }>;
   leaveSession: (sessionId: string, userId: string) => Promise<{ error: Error | null }>;
+  subscribeToRealtime: () => void;
+  unsubscribeFromRealtime: () => void;
   clearError: () => void;
 }
 
@@ -30,11 +37,13 @@ interface CreateSessionInput {
   createdBy: string;
 }
 
-export const useSessionStore = create<SessionState>((set) => ({
+export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
+  attendingSessions: new Set<string>(),
   isLoading: false,
   error: null,
   hasMore: true,
+  realtimeChannel: null,
 
   fetchSessions: async ({ latitude, longitude, radiusMeters = 15000 }) => {
     set({ isLoading: true, error: null });
@@ -79,6 +88,22 @@ export const useSessionStore = create<SessionState>((set) => ({
     }
   },
 
+  fetchAttendingSessions: async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('session_attendees')
+        .select('session_id')
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      const attendingSet = new Set<string>(data.map((row) => row.session_id));
+      set({ attendingSessions: attendingSet });
+    } catch (error) {
+      console.error('Error fetching attending sessions:', error);
+    }
+  },
+
   createSession: async (input) => {
     try {
       // Build the insert object
@@ -113,6 +138,16 @@ export const useSessionStore = create<SessionState>((set) => ({
   },
 
   joinSession: async (sessionId, userId) => {
+    // Optimistic update
+    set((state) => ({
+      attendingSessions: new Set(state.attendingSessions).add(sessionId),
+      sessions: state.sessions.map((s) =>
+        s.session_id === sessionId
+          ? { ...s, attendee_count: s.attendee_count + 1 }
+          : s
+      ),
+    }));
+
     try {
       const { error } = await supabase
         .from('session_attendees')
@@ -122,6 +157,20 @@ export const useSessionStore = create<SessionState>((set) => ({
         });
 
       if (error) {
+        // Rollback optimistic update
+        set((state) => {
+          const next = new Set(state.attendingSessions);
+          next.delete(sessionId);
+          return {
+            attendingSessions: next,
+            sessions: state.sessions.map((s) =>
+              s.session_id === sessionId
+                ? { ...s, attendee_count: Math.max(0, s.attendee_count - 1) }
+                : s
+            ),
+          };
+        });
+
         // Handle already joined (unique constraint violation)
         if (error.code === '23505') {
           return { error: new Error('You have already joined this prayer') };
@@ -136,6 +185,20 @@ export const useSessionStore = create<SessionState>((set) => ({
   },
 
   leaveSession: async (sessionId, userId) => {
+    // Optimistic update
+    set((state) => {
+      const next = new Set(state.attendingSessions);
+      next.delete(sessionId);
+      return {
+        attendingSessions: next,
+        sessions: state.sessions.map((s) =>
+          s.session_id === sessionId
+            ? { ...s, attendee_count: Math.max(0, s.attendee_count - 1) }
+            : s
+        ),
+      };
+    });
+
     try {
       const { error } = await supabase
         .from('session_attendees')
@@ -143,11 +206,77 @@ export const useSessionStore = create<SessionState>((set) => ({
         .eq('session_id', sessionId)
         .eq('user_id', userId);
 
-      if (error) throw error;
+      if (error) {
+        // Rollback optimistic update
+        set((state) => ({
+          attendingSessions: new Set(state.attendingSessions).add(sessionId),
+          sessions: state.sessions.map((s) =>
+            s.session_id === sessionId
+              ? { ...s, attendee_count: s.attendee_count + 1 }
+              : s
+          ),
+        }));
+        useToastStore.getState().error('Failed to leave prayer');
+        throw error;
+      }
 
+      useToastStore.getState().info('Left prayer');
       return { error: null };
     } catch (error) {
       return { error: error as Error };
+    }
+  },
+
+  subscribeToRealtime: () => {
+    const { realtimeChannel } = get();
+    if (realtimeChannel) return; // Already subscribed
+
+    const channel = supabase
+      .channel('session_attendees_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'session_attendees',
+        },
+        (payload) => {
+          const { sessions } = get();
+          const sessionId = (payload.new as { session_id?: string })?.session_id ||
+            (payload.old as { session_id?: string })?.session_id;
+
+          if (!sessionId) return;
+
+          // Update attendee count based on event type
+          if (payload.eventType === 'INSERT') {
+            set({
+              sessions: sessions.map((s) =>
+                s.session_id === sessionId
+                  ? { ...s, attendee_count: s.attendee_count + 1 }
+                  : s
+              ),
+            });
+          } else if (payload.eventType === 'DELETE') {
+            set({
+              sessions: sessions.map((s) =>
+                s.session_id === sessionId
+                  ? { ...s, attendee_count: Math.max(0, s.attendee_count - 1) }
+                  : s
+              ),
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    set({ realtimeChannel: channel });
+  },
+
+  unsubscribeFromRealtime: () => {
+    const { realtimeChannel } = get();
+    if (realtimeChannel) {
+      supabase.removeChannel(realtimeChannel);
+      set({ realtimeChannel: null });
     }
   },
 

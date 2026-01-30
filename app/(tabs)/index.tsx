@@ -1,12 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, RefreshControl, Pressable } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, useRouter } from 'expo-router';
-import * as Location from 'expo-location';
+import { Card, CardContent, CardHeader } from '@/components/ui';
+import { PrayerTimesStrip } from '@/components/prayer';
+import { FeedSkeleton } from '@/components/common';
+import { usePrayerTimes } from '@/lib/hooks/usePrayerTimes';
 import { useAuthStore } from '@/stores/authStore';
 import { useSessionStore } from '@/stores/sessionStore';
-import { Card, CardHeader, CardContent } from '@/components/ui';
-import type { SessionWithDetails, PrayerType } from '@/types';
+import type { PrayerType, SessionWithDetails } from '@/types';
+import * as Location from 'expo-location';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Prayer icons mapping
 const prayerIcons: Record<PrayerType, string> = {
@@ -140,11 +143,30 @@ function EmptyState() {
 export default function FeedScreen() {
   const router = useRouter();
   const { user, profile } = useAuthStore();
-  const { sessions, isLoading, error: sessionError, clearError, fetchSessions, joinSession, leaveSession } = useSessionStore();
+  const { 
+    sessions, 
+    attendingSessions,
+    isLoading, 
+    error: sessionError, 
+    clearError, 
+    fetchSessions, 
+    fetchAttendingSessions,
+    joinSession, 
+    leaveSession,
+    subscribeToRealtime,
+    unsubscribeFromRealtime,
+  } = useSessionStore();
   
   const [refreshing, setRefreshing] = useState(false);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [attendingSessions, setAttendingSessions] = useState<Set<string>>(new Set());
+
+  // Prayer times
+  const { 
+    prayerTimes, 
+    currentPrayer, 
+    isLoading: prayerTimesLoading,
+    error: prayerTimesError 
+  } = usePrayerTimes(location?.latitude ?? null, location?.longitude ?? null);
 
   // Fetch location on mount
   useEffect(() => {
@@ -178,6 +200,18 @@ export default function FeedScreen() {
     }
   }, [location, fetchSessions]);
 
+  // Fetch attending sessions and subscribe to realtime
+  useEffect(() => {
+    if (user) {
+      fetchAttendingSessions(user.id);
+      subscribeToRealtime();
+    }
+
+    return () => {
+      unsubscribeFromRealtime();
+    };
+  }, [user, fetchAttendingSessions, subscribeToRealtime, unsubscribeFromRealtime]);
+
   // Refetch when feed tab gains focus (e.g. returning from Create)
   useFocusEffect(
     useCallback(() => {
@@ -189,41 +223,20 @@ export default function FeedScreen() {
     if (!location) return;
     setRefreshing(true);
     await fetchSessions(location);
+    if (user) {
+      await fetchAttendingSessions(user.id);
+    }
     setRefreshing(false);
-  }, [location, fetchSessions]);
+  }, [location, user, fetchSessions, fetchAttendingSessions]);
 
   const handleJoin = async (sessionId: string) => {
     if (!user) return;
-    
-    // Optimistic update
-    setAttendingSessions(prev => new Set(prev).add(sessionId));
-    
-    const { error } = await joinSession(sessionId, user.id);
-    if (error) {
-      // Rollback on error
-      setAttendingSessions(prev => {
-        const next = new Set(prev);
-        next.delete(sessionId);
-        return next;
-      });
-    }
+    await joinSession(sessionId, user.id);
   };
 
   const handleLeave = async (sessionId: string) => {
     if (!user) return;
-    
-    // Optimistic update
-    setAttendingSessions(prev => {
-      const next = new Set(prev);
-      next.delete(sessionId);
-      return next;
-    });
-    
-    const { error } = await leaveSession(sessionId, user.id);
-    if (error) {
-      // Rollback on error
-      setAttendingSessions(prev => new Set(prev).add(sessionId));
-    }
+    await leaveSession(sessionId, user.id);
   };
 
   return (
@@ -257,7 +270,9 @@ export default function FeedScreen() {
       )}
 
       {/* Feed */}
-      {sessions.length === 0 && !isLoading ? (
+      {isLoading && sessions.length === 0 ? (
+        <FeedSkeleton />
+      ) : sessions.length === 0 ? (
         <EmptyState />
       ) : (
         <FlatList
@@ -277,9 +292,24 @@ export default function FeedScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
           ListHeaderComponent={
-            <Text className="text-lg font-semibold text-gray-900 mb-4">
-              Upcoming Prayers
-            </Text>
+            <>
+              {/* Prayer Times Strip */}
+              {prayerTimes && (
+                <PrayerTimesStrip
+                  prayerTimes={prayerTimes}
+                  currentPrayer={currentPrayer}
+                  isLoading={prayerTimesLoading}
+                />
+              )}
+              {prayerTimesError && (
+                <View className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                  <Text className="text-amber-700 text-sm">{prayerTimesError}</Text>
+                </View>
+              )}
+              <Text className="text-lg font-semibold text-gray-900 mb-4">
+                Upcoming Prayers
+              </Text>
+            </>
           }
         />
       )}

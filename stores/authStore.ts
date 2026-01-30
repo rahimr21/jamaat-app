@@ -1,7 +1,7 @@
-import * as Linking from 'expo-linking';
-import { create } from 'zustand';
-import { supabase, Session, User } from '@/lib/supabase';
+import { Session, supabase, User } from '@/lib/supabase';
+import { removePushToken } from '@/lib/api/notifications';
 import type { User as AppUser } from '@/types';
+import { create } from 'zustand';
 
 interface AuthState {
   session: Session | null;
@@ -151,6 +151,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
+    const { user } = get();
+    
+    // Remove push token before signing out
+    if (user?.id) {
+      await removePushToken(user.id);
+    }
+    
     await supabase.auth.signOut();
     set({ session: null, user: null, profile: null });
   },

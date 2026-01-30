@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
-import { View, Text, Pressable, Alert, Linking } from 'react-native';
-import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Location from 'expo-location';
-import Constants from 'expo-constants';
 import { supabase } from '@/lib/supabase';
+import { registerForPushNotifications, savePushToken } from '@/lib/api/notifications';
 import { useAuthStore } from '@/stores/authStore';
+import Constants from 'expo-constants';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Alert, Linking, Pressable, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Check if running in Expo Go (where push notifications are not supported)
 const isExpoGo = Constants.appOwnership === 'expo';
@@ -58,25 +59,22 @@ export default function PermissionsScreen() {
     }
 
     try {
-      // Dynamically import expo-notifications only when needed
-      const Notifications = await import('expo-notifications');
+      const token = await registerForPushNotifications();
       
-      const { status } = await Notifications.requestPermissionsAsync();
-      setNotificationsGranted(status === 'granted');
-
-      if (status === 'granted') {
-        try {
-          // Get and save push token
-          const token = (await Notifications.getExpoPushTokenAsync()).data;
-          
-          await supabase
-            .from('users')
-            .update({ expo_push_token: token })
-            .eq('id', user?.id);
-        } catch (tokenError) {
-          console.error('Error getting push token:', tokenError);
-          // Token failed but permission was granted - that's okay
+      if (token) {
+        setNotificationsGranted(true);
+        
+        // Save token to database
+        if (user?.id) {
+          await savePushToken(user.id, token);
         }
+      } else {
+        // Permission was denied
+        Alert.alert(
+          'Notifications Disabled',
+          'You can enable notifications later in Settings.',
+          [{ text: 'OK' }]
+        );
       }
     } catch (error) {
       console.error('Error requesting notifications:', error);

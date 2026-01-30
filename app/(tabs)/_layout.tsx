@@ -1,9 +1,9 @@
-import React, { useEffect } from 'react';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Tabs, useRouter } from 'expo-router';
+import React, { useEffect } from 'react';
 
-import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/colors';
 import { useAuthStore } from '@/stores/authStore';
 
 function TabBarIcon(props: {

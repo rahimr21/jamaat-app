@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, FlatList } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/authStore';
 import type { University } from '@/types';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function UniversityScreen() {
   const router = useRouter();

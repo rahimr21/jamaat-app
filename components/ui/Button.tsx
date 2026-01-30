@@ -17,6 +17,7 @@ const variantStyles = {
     container: 'bg-primary-500 active:bg-primary-600',
     containerDisabled: 'bg-gray-400',
     text: 'text-white',
+    textDisabled: 'text-white',
   },
   secondary: {
     container: 'bg-gray-100 active:bg-gray-200',
@@ -77,7 +78,7 @@ export function Button({
   const textClasses = [
     'font-semibold',
     sizeStyle.text,
-    isDisabled ? (variantStyle.textDisabled || 'text-white') : variantStyle.text,
+    isDisabled ? variantStyle.textDisabled : variantStyle.text,
   ].join(' ');
 
   return (
